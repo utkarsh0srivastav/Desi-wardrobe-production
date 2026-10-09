@@ -1,19 +1,34 @@
 {
+  "id": "/",
   "name": "Desi Wardrobe",
   "short_name": "Desi Wardrobe",
-  "description": "Local Fashion Marketplace",
+  "description": "Discover and reserve clothing from local fashion stores near you.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
+  "display_override": [
+    "standalone"
+  ],
   "orientation": "portrait",
   "background_color": "#F8F1E7",
   "theme_color": "#8B0000",
+  "categories": [
+    "shopping",
+    "lifestyle"
+  ],
   "icons": [
     {
       "src": "/icon.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }
+
