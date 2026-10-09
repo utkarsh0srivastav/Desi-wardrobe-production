@@ -1,8 +1,19 @@
-"icons": [
-  {
-    "src": "/icon.png",
-    "sizes": "512x512",
-    "type": "image/png",
-    "purpose": "any maskable"
-  }
-]
+{
+  "name": "Desi Wardrobe",
+  "short_name": "Desi Wardrobe",
+  "description": "Local Fashion Marketplace",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F8F1E7",
+  "theme_color": "#8B0000",
+  "icons": [
+    {
+      "src": "/icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
