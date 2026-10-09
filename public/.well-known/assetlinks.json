@@ -1,0 +1,15 @@
+
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.desiwardrobe.app",
+      "sha256_cert_fingerprints": [
+        "5D:1D:23:55:DC:D4:25:01:DD:01:9C:59:39:BA:D9:26:29:74:88:B2:F8:4F:8B:B7:D2:2B:2E:57:01:53:05:1E"
+      ]
+    }
+  }
+]
