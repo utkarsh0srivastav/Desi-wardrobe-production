@@ -71,14 +71,73 @@ type AppRoute =
 type NativeDenialMode = 'INITIAL' | 'RETURNED_FROM_SETTINGS' | 'REOPENED' | null;
 
 export default function App() {
-  const [showSplash, setShowSplash] = useState(true);
+  const [route, setInternalRoute] = useState<AppRoute>(() => {
+    try {
+      if (typeof window !== 'undefined' && window.history.state?.appRoute) {
+        return window.history.state.appRoute;
+      }
+      const savedRoute = storage.getActiveRoute<AppRoute>();
+      if (savedRoute && savedRoute.view) {
+        if (savedRoute.view === 'CUSTOMER_PAYMENT') {
+          const draft = savedRoute.draft || storage.getPendingCheckoutDraft();
+          if (draft && draft.items && draft.items.length > 0) {
+            return { view: 'CUSTOMER_PAYMENT', draft };
+          }
+        } else {
+          return savedRoute;
+        }
+      }
+    } catch {
+      // Fallback
+    }
+    return { view: 'ENTRY' };
+  });
+
+  const [showSplash, setShowSplash] = useState(() => {
+    try {
+      const savedRoute = storage.getActiveRoute<AppRoute>();
+      if (savedRoute && savedRoute.view !== 'ENTRY') {
+        return false;
+      }
+    } catch {
+      // Ignore
+    }
+    return true;
+  });
+
   const [theme, setTheme] = useState<ThemeMode>(() => storage.getTheme());
   const [language, setLanguage] = useState<AppLanguage>(
     () => (storage.getSettings().language === 'Hindi' ? 'Hindi' : 'English')
   );
-  const [route, setRoute] = useState<AppRoute>({ view: 'ENTRY' });
   const [activeModal, setActiveModal] = useState<ModalSection>(null);
   const [showCustomerAuthModal, setShowCustomerAuthModal] = useState(false);
+
+  const setRoute = useCallback(
+    (nextRoute: AppRoute, options?: { replace?: boolean; skipHistory?: boolean }) => {
+      setInternalRoute(nextRoute);
+      try {
+        storage.saveActiveRoute(nextRoute);
+        if (nextRoute.view === 'CUSTOMER_PAYMENT') {
+          storage.savePendingCheckoutDraft(nextRoute.draft);
+        } else if (nextRoute.view === 'BOOKING_CONFIRMATION') {
+          storage.clearPendingCheckoutDraft();
+          storage.clearPaymentPageState();
+        }
+
+        if (typeof window !== 'undefined' && !options?.skipHistory) {
+          const hash = `#${nextRoute.view.toLowerCase()}`;
+          if (options?.replace) {
+            window.history.replaceState({ appRoute: nextRoute }, '', hash);
+          } else {
+            window.history.pushState({ appRoute: nextRoute }, '', hash);
+          }
+        }
+      } catch {
+        // Ignore
+      }
+    },
+    []
+  );
 
   const [shops, setShops] = useState<Shop[]>([]);
   const [sponsorMap, setSponsorMap] = useState<Record<string, ShopSponsor>>({});
@@ -321,6 +380,154 @@ export default function App() {
       window.removeEventListener('focus', handleVisibilityOrFocus);
     };
   }, [requestAutomaticCustomerLocation]);
+
+  // Android System Back Button & In-App Navigation State Resolver
+  const handleBackNavigation = useCallback((): boolean => {
+    // 1. Dismiss customer auth modal if open
+    if (showCustomerAuthModal) {
+      setShowCustomerAuthModal(false);
+      return true;
+    }
+
+    // 2. Dismiss info/help modal if open
+    if (activeModal !== null) {
+      setActiveModal(null);
+      return true;
+    }
+
+    // 3. Dismiss native denial modal if open
+    if (nativeDenialMode !== null) {
+      setNativeDenialMode(null);
+      return true;
+    }
+
+    // 4. View-specific safe navigation transitions
+    switch (route.view) {
+      case 'CUSTOMER_PAYMENT':
+        // Safe return from Payment Screen to Customer Home without closing the application
+        setRoute({ view: 'CUSTOMER_HOME' }, { replace: true });
+        return true;
+
+      case 'CUSTOMER_BOOKING':
+        if (route.fromCartItemId) {
+          setRoute({ view: 'CUSTOMER_CART' }, { replace: true });
+        } else {
+          setRoute({ view: 'PRODUCT_DETAILS', productId: route.productId }, { replace: true });
+        }
+        return true;
+
+      case 'PRODUCT_DETAILS': {
+        const prod = products.find((p) => p.productId === route.productId);
+        if (prod) {
+          setRoute({ view: 'SHOP_PRODUCTS', shopId: prod.shopId }, { replace: true });
+        } else {
+          setRoute({ view: 'CUSTOMER_HOME' }, { replace: true });
+        }
+        return true;
+      }
+
+      case 'SHOP_PRODUCTS':
+        setRoute({ view: 'CUSTOMER_HOME' }, { replace: true });
+        return true;
+
+      case 'CUSTOMER_CART':
+      case 'CUSTOMER_ORDERS':
+      case 'BOOKING_CONFIRMATION':
+        setRoute({ view: 'CUSTOMER_HOME' }, { replace: true });
+        return true;
+
+      case 'CUSTOMER_HOME':
+        setRoute({ view: 'ENTRY' }, { replace: true });
+        return true;
+
+      case 'SHOPKEEPER_PORTAL':
+      case 'ADMIN_PORTAL':
+        setRoute({ view: 'ENTRY' }, { replace: true });
+        return true;
+
+      case 'ENTRY':
+        return false;
+
+      default:
+        return false;
+    }
+  }, [showCustomerAuthModal, activeModal, nativeDenialMode, route, products, setRoute]);
+
+  // Browser History & Android System Back Button Synchronization
+  useEffect(() => {
+    // Initialize history state on first render
+    if (typeof window !== 'undefined') {
+      const currentHash = `#${route.view.toLowerCase()}`;
+      if (!window.history.state?.appRoute) {
+        window.history.replaceState({ appRoute: route }, '', currentHash);
+      }
+    }
+
+    const handlePopState = (event: PopStateEvent) => {
+      if (event.state?.appRoute) {
+        // User popped to a recognized history state
+        setInternalRoute(event.state.appRoute);
+        storage.saveActiveRoute(event.state.appRoute);
+        if (event.state.appRoute.view === 'CUSTOMER_PAYMENT') {
+          storage.savePendingCheckoutDraft(event.state.appRoute.draft);
+        }
+      } else {
+        // User popped back past the root of history stack
+        const handled = handleBackNavigation();
+        if (handled) {
+          // Keep history active so user stays inside the app
+          window.history.pushState(
+            { appRoute: route },
+            '',
+            `#${route.view.toLowerCase()}`
+          );
+        }
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [handleBackNavigation, route]);
+
+  // Native Android hardware Back Button & WebView bridge integration
+  useEffect(() => {
+    const handleNativeBackButton = (e: Event) => {
+      e.preventDefault();
+      handleBackNavigation();
+    };
+
+    document.addEventListener('backbutton', handleNativeBackButton as EventListener);
+
+    const win = window as any;
+    win.onAndroidBackPressed = () => handleBackNavigation();
+    win.desiWardrobeGoBack = () => handleBackNavigation();
+
+    return () => {
+      document.removeEventListener('backbutton', handleNativeBackButton as EventListener);
+      delete win.onAndroidBackPressed;
+      delete win.desiWardrobeGoBack;
+    };
+  }, [handleBackNavigation]);
+
+  // App Lifecycle Restoration: Save active route, draft & context on app switch / background
+  useEffect(() => {
+    const handleSaveAppState = () => {
+      storage.saveActiveRoute(route);
+      if (route.view === 'CUSTOMER_PAYMENT') {
+        storage.savePendingCheckoutDraft(route.draft);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleSaveAppState);
+    window.addEventListener('pagehide', handleSaveAppState);
+    window.addEventListener('beforeunload', handleSaveAppState);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleSaveAppState);
+      window.removeEventListener('pagehide', handleSaveAppState);
+      window.removeEventListener('beforeunload', handleSaveAppState);
+    };
+  }, [route]);
 
   const currentMode: AppEntryMode | null =
     route.view === 'ENTRY'

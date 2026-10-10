@@ -18,6 +18,7 @@ import {
 import { CompressedScreenshotData, imageService } from '../../services/imageService';
 import { paymentService } from '../../services/paymentService';
 import { storageService, UploadedPaymentProof } from '../../services/storageService';
+import { storage } from '../../utils/storage';
 import { ResilientImage } from '../../components/ResilientImage';
 
 interface PaymentPageProps {
@@ -58,20 +59,112 @@ export const PaymentPage: React.FC<PaymentPageProps> = ({
     useState<CompressedScreenshotData | null>(null);
   const [cachedUploadedProof, setCachedUploadedProof] =
     useState<UploadedPaymentProof | null>(null);
-  const [stablePaymentId, setStablePaymentId] = useState<string>(
-    () => `PAY-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`
-  );
+  const [stablePaymentId, setStablePaymentId] = useState<string>(() => {
+    try {
+      const saved = storage.getPaymentPageState<{ stablePaymentId?: string }>();
+      if (saved?.stablePaymentId) return saved.stablePaymentId;
+    } catch {
+      // Fallback
+    }
+    return `PAY-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+  });
   const [submittedResult, setSubmittedResult] = useState<{
     payment: PaymentRecord;
     bookings: Booking[];
   } | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [returnedFromUpi, setReturnedFromUpi] = useState<boolean>(() => {
+    try {
+      return (
+        sessionStorage.getItem('dw_upi_launched') === 'true' ||
+        localStorage.getItem('dw_upi_launched') === 'true'
+      );
+    } catch {
+      return false;
+    }
+  });
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Always keep pending checkout draft persisted while on Payment Page
+  React.useEffect(() => {
+    storage.savePendingCheckoutDraft(draft);
+    storage.savePaymentPageState({
+      stablePaymentId,
+      stage,
+      cachedUploadedProof,
+    });
+  }, [draft, stablePaymentId, stage, cachedUploadedProof]);
+
+  // Detect when customer returns to the browser/app after switching to UPI application
+  React.useEffect(() => {
+    const handleForegroundReturn = () => {
+      if (document.visibilityState === 'visible') {
+        try {
+          const wasLaunched =
+            sessionStorage.getItem('dw_upi_launched') === 'true' ||
+            localStorage.getItem('dw_upi_launched') === 'true';
+          if (wasLaunched) {
+            setReturnedFromUpi(true);
+          }
+        } catch {
+          // Ignore
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleForegroundReturn);
+    window.addEventListener('focus', handleForegroundReturn);
+    return () => {
+      document.removeEventListener('visibilitychange', handleForegroundReturn);
+      window.removeEventListener('focus', handleForegroundReturn);
+    };
+  }, []);
 
   const handlePayUsingUpiApp = () => {
     // Launches the device's compatible UPI app (Google Pay, PhonePe, Paytm, BHIM, Amazon Pay, etc.)
-    // Opening or returning from the UPI app never marks payment as verified.
-    window.location.href = draft.upiUri;
+    // Safely preserves current checkout draft and payment screen context
+    try {
+      sessionStorage.setItem('dw_upi_launched', 'true');
+      localStorage.setItem('dw_upi_launched', 'true');
+      storage.savePendingCheckoutDraft(draft);
+      storage.savePaymentPageState({
+        stablePaymentId,
+        stage,
+        cachedUploadedProof,
+      });
+      setReturnedFromUpi(true);
+    } catch {
+      // Ignore storage errors
+    }
+
+    // Check for native Android wrapper bridge if packaged as APK
+    const win = window as any;
+    if (typeof win.AndroidPaymentBridge?.openUpiIntent === 'function') {
+      try {
+        win.AndroidPaymentBridge.openUpiIntent(draft.upiUri);
+        return;
+      } catch {
+        // Fallback to web link dispatch
+      }
+    }
+
+    // Launch without unloading or resetting current document
+    try {
+      const anchor = document.createElement('a');
+      anchor.href = draft.upiUri;
+      anchor.style.display = 'none';
+      document.body.appendChild(anchor);
+      anchor.click();
+      setTimeout(() => {
+        try {
+          document.body.removeChild(anchor);
+        } catch {
+          // Ignore
+        }
+      }, 800);
+    } catch {
+      window.location.assign(draft.upiUri);
+    }
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -138,6 +231,14 @@ export const PaymentPage: React.FC<PaymentPageProps> = ({
       });
       setStage('SUBMITTED');
       setSubmittedResult(result);
+      try {
+        sessionStorage.removeItem('dw_upi_launched');
+        localStorage.removeItem('dw_upi_launched');
+        storage.clearPendingCheckoutDraft();
+        storage.clearPaymentPageState();
+      } catch {
+        // Ignore storage errors
+      }
     } catch (err) {
       const msg =
         err instanceof Error && err.message
@@ -253,6 +354,18 @@ export const PaymentPage: React.FC<PaymentPageProps> = ({
           onSubmit={handleSubmitForm}
           className="space-y-4 pt-3 border-t border-[var(--border-subtle)]"
         >
+          {returnedFromUpi && (
+            <div className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/25 flex items-start gap-2.5 text-xs text-[var(--status-success)]">
+              <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+              <div>
+                <div className="font-bold">Returned from UPI App</div>
+                <div className="text-[11px] text-[var(--text-secondary)]">
+                  If you have completed your payment in Google Pay, PhonePe, Paytm, or BHIM, please select and upload your payment screenshot below to submit for Admin verification.
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="space-y-1">
             <div className="text-xs font-semibold text-[var(--text-secondary)]">
               Have you completed your payment?

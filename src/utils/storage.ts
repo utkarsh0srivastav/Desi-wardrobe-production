@@ -11,6 +11,7 @@ import {
   ThemeMode,
   CustomerCoordinates,
   AppSettings,
+  PendingCheckoutDraft,
 } from '../types/models';
 
 /**
@@ -38,6 +39,9 @@ const STORAGE_KEYS = {
   ACTIVE_ADMIN_SESSION: 'dw_v1_active_admin_session',
   CUSTOMER_COORDS: 'dw_v1_customer_coords',
   SETTINGS: 'dw_v1_settings',
+  ACTIVE_ROUTE: 'dw_v1_active_route',
+  PENDING_CHECKOUT_DRAFT: 'dw_v1_checkout_draft',
+  PAYMENT_PAGE_STATE: 'dw_v1_payment_page_state',
 } as const;
 
 export interface ActiveAdminSession {
@@ -183,6 +187,30 @@ export const storage = {
       language: 'English',
     }),
   saveSettings: (settings: AppSettings): void => safeWrite(STORAGE_KEYS.SETTINGS, settings),
+
+  // Active Route & Safe Lifecycle Restoration
+  getActiveRoute: <T = any>(): T | null =>
+    safeRead<T | null>(STORAGE_KEYS.ACTIVE_ROUTE, null),
+  saveActiveRoute: (route: unknown): void =>
+    safeWrite(STORAGE_KEYS.ACTIVE_ROUTE, route),
+  clearActiveRoute: (): void =>
+    safeWrite(STORAGE_KEYS.ACTIVE_ROUTE, null),
+
+  // Pending Checkout Draft (Preserves active order during UPI switching / backgrounding)
+  getPendingCheckoutDraft: (): PendingCheckoutDraft | null =>
+    safeRead<PendingCheckoutDraft | null>(STORAGE_KEYS.PENDING_CHECKOUT_DRAFT, null),
+  savePendingCheckoutDraft: (draft: PendingCheckoutDraft | null): void =>
+    safeWrite(STORAGE_KEYS.PENDING_CHECKOUT_DRAFT, draft),
+  clearPendingCheckoutDraft: (): void =>
+    safeWrite(STORAGE_KEYS.PENDING_CHECKOUT_DRAFT, null),
+
+  // Payment Page State (Preserves screenshot selection & stage during UPI app switching)
+  getPaymentPageState: <T = any>(): T | null =>
+    safeRead<T | null>(STORAGE_KEYS.PAYMENT_PAGE_STATE, null),
+  savePaymentPageState: (state: unknown): void =>
+    safeWrite(STORAGE_KEYS.PAYMENT_PAGE_STATE, state),
+  clearPaymentPageState: (): void =>
+    safeWrite(STORAGE_KEYS.PAYMENT_PAGE_STATE, null),
 
   // Clear all platform marketplace data from local cache (preserving Admin config & theme)
   clearAllPlatformMarketplaceData: (): void => {
