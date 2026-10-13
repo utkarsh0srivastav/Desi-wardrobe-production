@@ -10,6 +10,8 @@ export interface PlatformConfig {
   ADMIN_UPI_ID: string;
   MIN_BOOKING_AMOUNT_PER_UNIT: number;
   SHOP_RADIUS_KM: number;
+  TAKEAWAY_RADIUS_KM: number;
+  DELIVERY_RADIUS_KM: number;
   PICKUP_HOURS: number;
   updatedAt?: string;
 }
@@ -19,6 +21,8 @@ export const DEFAULT_PLATFORM_CONFIG: PlatformConfig = {
   ADMIN_UPI_ID: 'utkarsh1614@ybl',
   MIN_BOOKING_AMOUNT_PER_UNIT: 75,
   SHOP_RADIUS_KM: 100,
+  TAKEAWAY_RADIUS_KM: 100,
+  DELIVERY_RADIUS_KM: 15,
   PICKUP_HOURS: 48,
 };
 
@@ -41,6 +45,14 @@ let currentConfig: PlatformConfig = (() => {
           typeof parsed.SHOP_RADIUS_KM === 'number' && parsed.SHOP_RADIUS_KM > 0
             ? parsed.SHOP_RADIUS_KM
             : DEFAULT_PLATFORM_CONFIG.SHOP_RADIUS_KM,
+        TAKEAWAY_RADIUS_KM:
+          typeof parsed.TAKEAWAY_RADIUS_KM === 'number' && parsed.TAKEAWAY_RADIUS_KM > 0
+            ? parsed.TAKEAWAY_RADIUS_KM
+            : DEFAULT_PLATFORM_CONFIG.TAKEAWAY_RADIUS_KM,
+        DELIVERY_RADIUS_KM:
+          typeof parsed.DELIVERY_RADIUS_KM === 'number' && parsed.DELIVERY_RADIUS_KM > 0
+            ? parsed.DELIVERY_RADIUS_KM
+            : DEFAULT_PLATFORM_CONFIG.DELIVERY_RADIUS_KM,
         PICKUP_HOURS:
           typeof parsed.PICKUP_HOURS === 'number' && parsed.PICKUP_HOURS > 0
             ? parsed.PICKUP_HOURS
@@ -81,6 +93,14 @@ export const appConfig = {
         typeof next.SHOP_RADIUS_KM === 'number' && next.SHOP_RADIUS_KM > 0
           ? next.SHOP_RADIUS_KM
           : currentConfig.SHOP_RADIUS_KM,
+      TAKEAWAY_RADIUS_KM:
+        typeof next.TAKEAWAY_RADIUS_KM === 'number' && next.TAKEAWAY_RADIUS_KM > 0
+          ? next.TAKEAWAY_RADIUS_KM
+          : currentConfig.TAKEAWAY_RADIUS_KM,
+      DELIVERY_RADIUS_KM:
+        typeof next.DELIVERY_RADIUS_KM === 'number' && next.DELIVERY_RADIUS_KM > 0
+          ? next.DELIVERY_RADIUS_KM
+          : currentConfig.DELIVERY_RADIUS_KM,
       PICKUP_HOURS:
         typeof next.PICKUP_HOURS === 'number' && next.PICKUP_HOURS > 0
           ? next.PICKUP_HOURS

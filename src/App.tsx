@@ -587,6 +587,7 @@ export default function App() {
               window.scrollTo({ top: 0, behavior: 'smooth' });
               setRoute({ view: 'CUSTOMER_HOME' });
             }}
+            onOpenCustomerLogin={() => setShowCustomerAuthModal(true)}
             onOpenShopkeeperPortal={() => {
               window.scrollTo({ top: 0, behavior: 'smooth' });
               setRoute({ view: 'SHOPKEEPER_PORTAL' });
@@ -602,6 +603,7 @@ export default function App() {
         return (
           <CustomerHomePage
             shops={sortedPublicShopsWithinRadius}
+            maxRadiusKm={maxRadiusKm}
             customerCoords={customerCoords}
             locationStatus={locationStatus}
             locationError={locationError}

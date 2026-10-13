@@ -27,6 +27,7 @@ import { ResilientImage } from '../../components/ResilientImage';
 
 interface CustomerHomePageProps {
   shops: PublicShopWithDistance[];
+  maxRadiusKm: number;
   customerCoords: CustomerCoordinates | null;
   locationStatus: 'IDLE' | 'LOADING' | 'GRANTED' | 'UNAVAILABLE';
   locationError: LocationServiceError | null;
@@ -36,6 +37,7 @@ interface CustomerHomePageProps {
 
 export const CustomerHomePage: React.FC<CustomerHomePageProps> = ({
   shops,
+  maxRadiusKm,
   customerCoords,
   locationStatus,
   locationError,
@@ -97,8 +99,8 @@ export const CustomerHomePage: React.FC<CustomerHomePageProps> = ({
           </h1>
           <p className="text-xs sm:text-sm text-[#D9C3B8] max-w-xl leading-relaxed">
             {lang === 'Hindi'
-              ? 'अपने 100 KM के दायरे में विश्वसनीय कपड़ों की दुकानें खोजें, कलेक्शन देखें और ₹75 प्रति यूनिट में ऑनलाइन बुक करें।'
-              : 'Explore verified clothing shops within 100 KM of your location, browse Men’s & Women’s collections, and reserve items online for 48 hours.'}
+              ? `अपने ${maxRadiusKm} KM के दायरे में विश्वसनीय कपड़ों की दुकानें खोजें, कलेक्शन देखें और ₹75 प्रति यूनिट में ऑनलाइन बुक करें।`
+              : `Explore verified clothing shops within ${maxRadiusKm} KM of your location, browse Men’s & Women’s collections, and reserve items online for 48 hours.`}
           </p>
 
           {/* Location Status Bar */}
@@ -109,7 +111,7 @@ export const CustomerHomePage: React.FC<CustomerHomePageProps> = ({
                 <span>Detecting your location...</span>
               ) : customerCoords ? (
                 <span>
-                  Showing shops within <strong>100 KM</strong> of your location
+                  Showing shops within <strong>{maxRadiusKm} KM</strong> of your location
                 </span>
               ) : (
                 <span className="text-amber-200">
@@ -189,7 +191,7 @@ export const CustomerHomePage: React.FC<CustomerHomePageProps> = ({
               Detecting Your Location...
             </h3>
             <p className="text-xs text-[var(--text-secondary)] max-w-md mx-auto">
-              Finding approved clothing shops within 100 KM of your real coordinates.
+              Finding approved clothing shops within {maxRadiusKm} KM of your real coordinates.
             </p>
           </div>
         ) : !customerCoords ? (
@@ -221,10 +223,10 @@ export const CustomerHomePage: React.FC<CustomerHomePageProps> = ({
               <Store className="w-6 h-6" />
             </div>
             <h3 className="font-display text-lg font-bold text-[var(--text-primary)]">
-              No Shops Found Within 100 KM
+              No Shops Found Within {maxRadiusKm} KM
             </h3>
             <p className="text-xs text-[var(--text-secondary)] max-w-md mx-auto">
-              There are currently no approved shops matching your filter within 100 KM of your location.
+              There are currently no approved shops matching your filter within {maxRadiusKm} KM of your location.
             </p>
           </div>
         ) : (
