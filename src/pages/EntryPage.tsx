@@ -1,31 +1,49 @@
 import React from 'react';
 import {
-  ShoppingBag,
+  LogIn,
+  UserPlus,
   ArrowRight,
-  ShieldCheck,
-  MapPin,
-  Clock,
   Store,
-  Lock,
+  Shield,
+  Truck,
+  Sparkles,
+  ShoppingBag,
 } from 'lucide-react';
 import { BrandLogo } from '../components/BrandLogo';
 import { getCurrentLanguage, translations } from '../utils/i18n';
 
 interface EntryPageProps {
-  onContinueAsCustomer: () => void;
+  onOpenCustomerLogin: () => void;
+  onOpenCustomerRegister: () => void;
+  onSkipForNow: () => void;
+  onExploreLocalShops: () => void;
+  onOpenDeliveryPartnerLogin: () => void;
   onOpenShopkeeperPortal: () => void;
   onOpenAdminPortal: () => void;
 }
 
 /**
-  * DESI WARDROBE — Main Landing / Entry Screen
-  *
-  * Customer-first marketplace landing screen:
-  * - Shows ONLY the customer-facing "EXPLORE LOCAL SHOPS" card prominently.
-  * - Moves Shopkeeper & Admin access to a small, secondary footer section at the bottom.
-  */
+ * DESI WARDROBE — Customer Landing Page
+ *
+ * Clean, modern, mobile-first customer entry point.
+ * Features:
+ * - Brand logo and name
+ * - Prominent "Customer" heading & concise description
+ * - Primary Login and Register buttons
+ * - "Skip for Now" guest browsing trigger
+ * - Attractive, compact fashion & local-boutique visual preview
+ * - Clear "Explore Local Shops" call-to-action
+ * - Three compact, separated role links in footer:
+ *     1. Delivery Partner Login
+ *     2. Shopkeeper Login / Register
+ *     3. Admin Login
+ */
 export const EntryPage: React.FC<EntryPageProps> = ({
-  onContinueAsCustomer,
+  onOpenCustomerLogin,
+  onOpenCustomerRegister,
+  onSkipForNow,
+  onExploreLocalShops,
+  onOpenDeliveryPartnerLogin,
   onOpenShopkeeperPortal,
   onOpenAdminPortal,
 }) => {
@@ -33,100 +51,153 @@ export const EntryPage: React.FC<EntryPageProps> = ({
   const t = translations[lang];
 
   return (
-    <div className="max-w-lg mx-auto px-4 pt-8 pb-16 min-h-[calc(100vh-9rem)] flex flex-col justify-between gap-10">
+    <div className="max-w-md mx-auto px-4 pt-6 pb-12 min-h-[calc(100vh-8rem)] flex flex-col justify-between gap-8">
+      {/* Top Section: Brand & Customer Entry */}
       <div className="space-y-6">
-        {/* Brand Hero */}
-        <div className="rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)] p-6 sm:p-8 text-center shadow-xs space-y-4">
+        {/* Brand Header */}
+        <div className="text-center space-y-3 pt-2">
           <div className="flex justify-center">
             <BrandLogo size="lg" />
           </div>
-          <div className="space-y-1.5">
-            <h1 className="font-display text-3xl sm:text-4xl font-bold tracking-tight text-[var(--text-primary)]">
+          <div>
+            <h1 className="font-display text-3xl font-bold tracking-tight text-[var(--text-primary)]">
               DESI WARDROBE
             </h1>
-            <p className="text-sm font-medium text-[var(--accent-primary)]">
+            <p className="text-xs font-semibold text-[var(--accent-primary)] mt-0.5">
               {t.tagline}
             </p>
-            <p className="text-xs text-[var(--text-secondary)] max-w-sm mx-auto pt-1 leading-relaxed">
-              {lang === 'Hindi'
-                ? 'आस-पास की कपड़ों की दुकानें खोजें, असली स्टोर इन्वेंटरी देखें और 48 घंटे के पिकअप के लिए कपड़े बुक करें।'
-                : 'Discover nearby clothing shops, browse real store inventory, and reserve outfits for 48-hour in-store pickup.'}
-            </p>
-          </div>
-
-          <div className="grid grid-cols-3 gap-2 pt-2">
-            <div className="p-2.5 rounded-2xl bg-[var(--bg-secondary)]/70 text-center space-y-1">
-              <MapPin className="w-4 h-4 text-[var(--accent-primary)] mx-auto" />
-              <div className="text-[11px] font-semibold text-[var(--text-primary)]">Nearby Shops</div>
-            </div>
-            <div className="p-2.5 rounded-2xl bg-[var(--bg-secondary)]/70 text-center space-y-1">
-              <Clock className="w-4 h-4 text-[var(--accent-primary)] mx-auto" />
-              <div className="text-[11px] font-semibold text-[var(--text-primary)]">48h Hold</div>
-            </div>
-            <div className="p-2.5 rounded-2xl bg-[var(--bg-secondary)]/70 text-center space-y-1">
-              <ShieldCheck className="w-4 h-4 text-[var(--accent-primary)] mx-auto" />
-              <div className="text-[11px] font-semibold text-[var(--text-primary)]">UPI Verified</div>
-            </div>
           </div>
         </div>
 
-        {/* Prominent Customer Entry Card */}
-        <div className="rounded-3xl bg-[var(--bg-card)] border-2 border-[var(--accent-primary)]/30 hover:border-[var(--accent-primary)] p-6 sm:p-7 shadow-sm transition-all space-y-5">
-          <div className="flex items-start gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-[var(--accent-soft)] text-[var(--accent-primary)] flex items-center justify-center shrink-0">
-              <ShoppingBag className="w-6 h-6" />
+        {/* Customer Portal Card */}
+        <div className="rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)] p-6 shadow-xs space-y-5 text-center">
+          <div className="space-y-1.5">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[var(--accent-soft)] text-[var(--accent-primary)] text-[11px] font-bold uppercase tracking-wider">
+              <ShoppingBag className="w-3.5 h-3.5" />
+              <span>Customer Portal</span>
             </div>
-            <div className="space-y-1">
-              <span className="inline-block px-2.5 py-0.5 rounded-lg bg-[var(--accent-soft)] text-[var(--accent-primary)] text-[10px] font-bold uppercase tracking-wider">
-                {t.localFashionMarketplace}
+            <h2 className="font-display text-2xl font-bold text-[var(--text-primary)]">
+              Customer
+            </h2>
+            <p className="text-xs text-[var(--text-secondary)] leading-relaxed max-w-xs mx-auto">
+              {lang === 'Hindi'
+                ? 'अपने आस-पास की स्थानीय दुकानें और कपड़े खोजें।'
+                : 'Discover local shops and products near you.'}
+            </p>
+          </div>
+
+          {/* Customer Action Buttons */}
+          <div className="space-y-2.5 pt-1">
+            <div className="grid grid-cols-2 gap-2.5">
+              <button
+                type="button"
+                onClick={onOpenCustomerLogin}
+                className="min-h-[48px] px-4 py-2.5 rounded-2xl bg-[var(--accent-primary)] hover:bg-[var(--accent-hover)] active:scale-[0.98] text-white text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-sm transition-all"
+              >
+                <LogIn className="w-4 h-4" />
+                <span>Login</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={onOpenCustomerRegister}
+                className="min-h-[48px] px-4 py-2.5 rounded-2xl bg-[var(--bg-primary)] hover:bg-[var(--bg-secondary)] active:scale-[0.98] border-2 border-[var(--accent-primary)] text-[var(--accent-primary)] text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all"
+              >
+                <UserPlus className="w-4 h-4" />
+                <span>Register</span>
+              </button>
+            </div>
+
+            {/* Skip for Now Option */}
+            <button
+              type="button"
+              onClick={onSkipForNow}
+              className="w-full py-2 text-xs font-semibold text-[var(--text-muted)] hover:text-[var(--accent-primary)] transition-colors underline underline-offset-4 decoration-dotted"
+            >
+              {lang === 'Hindi' ? 'बिना लॉगिन के आगे बढ़ें (Skip for Now)' : 'Skip for Now'}
+            </button>
+          </div>
+        </div>
+
+        {/* Compact Visual Local Shopping Area */}
+        <div className="rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)] p-5 space-y-3.5 shadow-2xs">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-[var(--accent-primary)]" />
+              <span className="text-xs font-bold text-[var(--text-primary)]">
+                {lang === 'Hindi' ? 'स्थानीय फैशन मार्केट' : 'Local Fashion Collections'}
               </span>
-              <h2 className="font-display text-2xl sm:text-3xl font-bold text-[var(--text-primary)]">
-                {t.exploreLocalShops}
-              </h2>
-              <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
-                {lang === 'Hindi'
-                  ? 'आस-पास की कपड़ों की दुकानों से पुरुषों एवं महिलाओं (Men & Women) के फैशन कलेक्शन देखें, कार्ट में जोड़ें और इन-स्टोर पिकअप के लिए बुक करें।'
-                  : "Browse Men's & Women's fashion collections from nearby clothing stores, add items to your cart, and book products for in-store pickup."}
-              </p>
+            </div>
+            <span className="text-[11px] font-medium text-[var(--text-muted)]">
+              Clothing · Footwear · Accessories
+            </span>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2">
+            <div className="p-3 rounded-2xl bg-[var(--bg-primary)] border border-[var(--border-subtle)] text-center space-y-1">
+              <div className="text-xs font-bold text-[var(--text-primary)]">Clothing</div>
+              <div className="text-[10px] text-[var(--text-muted)]">Men · Women · Kids</div>
+            </div>
+            <div className="p-3 rounded-2xl bg-[var(--bg-primary)] border border-[var(--border-subtle)] text-center space-y-1">
+              <div className="text-xs font-bold text-[var(--text-primary)]">Footwear</div>
+              <div className="text-[10px] text-[var(--text-muted)]">Shoes & Sandals</div>
+            </div>
+            <div className="p-3 rounded-2xl bg-[var(--bg-primary)] border border-[var(--border-subtle)] text-center space-y-1">
+              <div className="text-xs font-bold text-[var(--text-primary)]">Accessories</div>
+              <div className="text-[10px] text-[var(--text-muted)]">Bags, Watches & more</div>
             </div>
           </div>
 
           <button
             type="button"
-            onClick={onContinueAsCustomer}
-            className="w-full min-h-[54px] px-6 py-3.5 rounded-2xl bg-[var(--accent-primary)] hover:bg-[var(--accent-hover)] active:scale-[0.99] text-white text-sm font-bold flex items-center justify-between shadow-sm transition-all"
+            onClick={onExploreLocalShops}
+            className="w-full min-h-[46px] px-4 py-2.5 rounded-2xl bg-[var(--bg-secondary)] hover:bg-[var(--border-subtle)] active:scale-[0.99] text-[var(--text-primary)] text-xs font-bold flex items-center justify-between transition-colors border border-[var(--border-subtle)]"
           >
             <span>{t.exploreLocalShopsBtn}</span>
-            <ArrowRight className="w-4 h-4" />
+            <ArrowRight className="w-4 h-4 text-[var(--accent-primary)]" />
           </button>
         </div>
       </div>
 
-      {/* Small Secondary Footer Section for Shopkeepers & Admin */}
-      <div className="pt-6 border-t border-[var(--border-subtle)]/70 text-center space-y-2">
-        <p className="text-[11px] text-[var(--text-muted)]">Are you a Shopkeeper?</p>
-        <div className="flex flex-wrap items-center justify-center gap-4">
+      {/* Footer Role Links — Small, clearly separated, non-intrusive */}
+      <footer className="pt-4 border-t border-[var(--border-subtle)]/70 text-center space-y-2">
+        <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-4 text-xs">
+          <button
+            type="button"
+            onClick={onOpenDeliveryPartnerLogin}
+            className="inline-flex items-center gap-1.5 font-medium text-[var(--text-secondary)] hover:text-[var(--accent-primary)] transition-colors py-1 px-1.5"
+          >
+            <Truck className="w-3.5 h-3.5 text-blue-600" />
+            <span>Delivery Partner Login</span>
+          </button>
+
+          <span className="text-[var(--border-strong)]" aria-hidden="true">
+            •
+          </span>
+
           <button
             type="button"
             onClick={onOpenShopkeeperPortal}
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-[var(--text-secondary)] hover:text-[var(--accent-primary)] underline underline-offset-4 transition-colors py-1 px-2"
+            className="inline-flex items-center gap-1.5 font-medium text-[var(--text-secondary)] hover:text-[var(--accent-primary)] transition-colors py-1 px-1.5"
           >
             <Store className="w-3.5 h-3.5 text-[var(--accent-primary)]" />
             <span>Shopkeeper Login / Register</span>
           </button>
 
-          <span className="text-[var(--border-strong)]">·</span>
+          <span className="text-[var(--border-strong)]" aria-hidden="true">
+            •
+          </span>
 
           <button
             type="button"
             onClick={onOpenAdminPortal}
-            className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--text-muted)] hover:text-[var(--accent-primary)] transition-colors py-1 px-2"
+            className="inline-flex items-center gap-1.5 font-medium text-[var(--text-secondary)] hover:text-[var(--accent-primary)] transition-colors py-1 px-1.5"
           >
-            <Lock className="w-3 h-3" />
-            <span>Admin Portal</span>
+            <Shield className="w-3.5 h-3.5 text-stone-500" />
+            <span>Admin Login</span>
           </button>
         </div>
-      </div>
+      </footer>
     </div>
   );
 };

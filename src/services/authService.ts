@@ -70,24 +70,28 @@ export const authService = {
   },
 
   /**
-   * Returning shopkeeper login using Mobile Number + 4-digit PIN (verified against hashed PIN).
+   * Returning shopkeeper login using Mobile Number + 4-digit PIN (verified against hashed PIN with rate limiting).
    */
-  loginWithPin: (rawMobile: string, pin: string): Shopkeeper => {
+  loginWithPin: async (rawMobile: string, pin: string): Promise<Shopkeeper> => {
     const cleanMobile = rawMobile.replace(/\D/g, '');
     const existing = shopkeeperService.getShopkeeperByMobile(cleanMobile);
 
     if (!existing) {
-      throw new Error('This mobile number has not been registered by Desi Wardrobe Admin yet.');
+      throw new Error('No registered Shopkeeper account found with this mobile number. Please register your shop first.');
+    }
+    if (existing.approvalStatus === 'REJECTED') {
+      throw new Error('Your shop registration request was rejected by Desi Wardrobe Admin.');
     }
     if (existing.approvalStatus !== 'APPROVED') {
-      throw new Error('Your account is awaiting Admin approval.');
-    }
-    if (!shopkeeperService.verifyShopkeeperPin(existing, pin)) {
-      throw new Error('Incorrect PIN. Please enter your 4-digit PIN.');
+      throw new Error(
+        'Your shopkeeper registration is pending approval by Desi Wardrobe Admin. Once approved, you can log in to your dashboard.'
+      );
     }
 
-    storage.setActiveShopkeeperId(existing.shopkeeperId);
-    return existing;
+    const verified = await shopkeeperService.verifyShopkeeperPinWithRateLimit(existing, pin);
+
+    storage.setActiveShopkeeperId(verified.shopkeeperId);
+    return verified;
   },
 
   /**

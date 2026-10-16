@@ -195,6 +195,9 @@ function sanitizeShopForFirestore(shop: Shop): Shop {
     openingTime: (shop.openingTime || '10:00 AM').slice(0, 30),
     closingTime: (shop.closingTime || '09:00 PM').slice(0, 30),
     status: shop.status || 'OPEN',
+    ...(shop.shopkeeperUpiId ? { shopkeeperUpiId: shop.shopkeeperUpiId.slice(0, 100) } : {}),
+    ...(shop.isOnline !== undefined ? { isOnline: Boolean(shop.isOnline) } : {}),
+    ...(shop.onlineStatus ? { onlineStatus: shop.onlineStatus } : {}),
     ...(shop.isSponsored !== undefined ? { isSponsored: Boolean(shop.isSponsored) } : {}),
     ...(shop.sponsorStatus ? { sponsorStatus: shop.sponsorStatus } : {}),
     ...(shop.sponsorPlan ? { sponsorPlan: shop.sponsorPlan.slice(0, 60) } : {}),
@@ -406,6 +409,10 @@ export const shopService = {
       longitude: number;
       locationName: string;
       state?: string;
+      shopkeeperUpiId?: string;
+      openingTime?: string;
+      closingTime?: string;
+      status?: 'OPEN' | 'CLOSED';
       shopStatus?: ShopStatus;
       profileStatus?: ProfileStatus;
     }
@@ -456,6 +463,12 @@ export const shopService = {
       longitude: Number(updates.longitude.toFixed(6)),
       locationName: updates.locationName.trim().slice(0, 300),
       ...(resolvedState ? { state: resolvedState } : {}),
+      ...(updates.shopkeeperUpiId ? { shopkeeperUpiId: updates.shopkeeperUpiId.trim().slice(0, 100) } : {}),
+      openingTime: (updates.openingTime || shops[index].openingTime || '10:00 AM').slice(0, 30),
+      closingTime: (updates.closingTime || shops[index].closingTime || '09:00 PM').slice(0, 30),
+      status: updates.status || shops[index].status || 'OPEN',
+      isOnline: (updates.status || shops[index].status) !== 'CLOSED',
+      onlineStatus: (updates.status || shops[index].status) === 'CLOSED' ? 'OFFLINE' : 'ONLINE',
       shopStatus: nextShopStatus,
       profileStatus: nextProfileStatus,
       updatedAt: new Date().toISOString(),
@@ -470,6 +483,7 @@ export const shopService = {
           ...sk,
           name: updates.shopkeeperName.trim().slice(0, 120),
           profileStatus: nextProfileStatus,
+          ...(updates.shopkeeperUpiId ? { upiId: updates.shopkeeperUpiId.trim().slice(0, 100) } : {}),
         };
         void persistShopkeeperToFirestore(updatedSk, OperationType.UPDATE);
         return updatedSk;
@@ -486,6 +500,29 @@ export const shopService = {
     void persistShopToFirestore(updatedShop, OperationType.UPDATE);
 
     return updatedShop;
+  },
+
+  /**
+   * Toggles shop between OPEN (ONLINE) and CLOSED (OFFLINE) status.
+   */
+  toggleShopOpenStatus: (shopId: string): Shop => {
+    const shops = storage.getShops();
+    const index = shops.findIndex((s) => s.shopId === shopId);
+    if (index === -1) throw new Error('Shop record not found.');
+    const current = shops[index];
+    const isCurrentlyOpen = current.status !== 'CLOSED';
+    const nextStatus: 'OPEN' | 'CLOSED' = isCurrentlyOpen ? 'CLOSED' : 'OPEN';
+    const updated: Shop = {
+      ...current,
+      status: nextStatus,
+      isOnline: !isCurrentlyOpen,
+      onlineStatus: !isCurrentlyOpen ? 'ONLINE' : 'OFFLINE',
+      updatedAt: new Date().toISOString(),
+    };
+    shops[index] = updated;
+    storage.saveShops(shops);
+    void persistShopToFirestore(updated, OperationType.UPDATE);
+    return updated;
   },
 
   /**

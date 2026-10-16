@@ -21,6 +21,9 @@
         "openingTime": { "type": "string", "maxLength": 30 },
         "closingTime": { "type": "string", "maxLength": 30 },
         "status": { "type": "string", "maxLength": 20 },
+        "isOnline": { "type": "boolean" },
+        "onlineStatus": { "type": "string", "maxLength": 20 },
+        "shopkeeperUpiId": { "type": "string", "maxLength": 100 },
         "updatedAt": { "type": "string", "maxLength": 64 },
         "createdAt": { "type": "string", "minLength": 1, "maxLength": 64 }
       },
@@ -51,6 +54,11 @@
         "name": { "type": "string", "minLength": 1, "maxLength": 150 },
         "description": { "type": "string", "minLength": 1, "maxLength": 1000 },
         "price": { "type": "number" },
+        "mrp": { "type": "number" },
+        "offerPrice": { "type": "number" },
+        "discountPercent": { "type": "number" },
+        "gender": { "type": "string", "maxLength": 30 },
+        "productCategory": { "type": "string", "maxLength": 60 },
         "quantity": { "type": "number" },
         "soldCount": { "type": "number" },
         "sizes": { "type": "array" },
@@ -221,6 +229,11 @@
         "approvalStatus": { "type": "string", "maxLength": 30 },
         "pinCreated": { "type": "boolean" },
         "profileStatus": { "type": "string", "maxLength": 30 },
+        "securityQuestion": { "type": "string", "maxLength": 200 },
+        "securityAnswerHash": { "type": "string", "maxLength": 128 },
+        "failedPinAttempts": { "type": "number" },
+        "pinLockedUntil": { "type": "string", "maxLength": 64 },
+        "upiId": { "type": "string", "maxLength": 100 },
         "createdAt": { "type": "string", "minLength": 1, "maxLength": 64 },
         "verifiedAt": { "type": "string", "maxLength": 64 },
         "approvedAt": { "type": "string", "maxLength": 64 }
@@ -292,6 +305,31 @@
         "SHOP_RADIUS_KM",
         "PICKUP_HOURS"
       ]
+    },
+    "DeliveryPartner": {
+      "title": "DeliveryPartner",
+      "description": "Delivery partner profiles, verification documents, and active delivery assignments.",
+      "type": "object",
+      "properties": {
+        "partnerId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "contactNumber": { "type": "string", "minLength": 10, "maxLength": 15 },
+        "upiId": { "type": "string", "maxLength": 100 },
+        "status": { "type": "string", "maxLength": 40 },
+        "approvalStatus": { "type": "string", "maxLength": 40 },
+        "verificationStatus": { "type": "string", "maxLength": 40 },
+        "createdAt": { "type": "string", "minLength": 1, "maxLength": 64 }
+      },
+      "required": [
+        "partnerId",
+        "name",
+        "contactNumber",
+        "upiId",
+        "status",
+        "approvalStatus",
+        "verificationStatus",
+        "createdAt"
+      ]
     }
   },
   "firestore": {
@@ -318,6 +356,10 @@
     "/shopkeepers/{shopkeeperId}": {
       "schema": { "$ref": "#/entities/Shopkeeper" },
       "description": "Shopkeeper pre-registrations, verification requests, and accounts."
+    },
+    "/deliveryPartners/{partnerId}": {
+      "schema": { "$ref": "#/entities/DeliveryPartner" },
+      "description": "Delivery partner accounts, document verification, and delivery statuses."
     },
     "/admins/{adminUid}": {
       "schema": { "$ref": "#/entities/AdminAccount" },

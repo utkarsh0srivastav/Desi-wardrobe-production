@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { APIProvider } from '@vis.gl/react-google-maps';
-import { MapPin, Settings, ArrowLeft } from 'lucide-react';
+import { MapPin, Settings, ArrowLeft, Truck } from 'lucide-react';
 import { appConfig } from './config/appConfig';
 import { SplashScreen } from './components/SplashScreen';
 import { HeaderMenu } from './components/HeaderMenu';
@@ -19,11 +19,14 @@ import { ShopkeeperAuthPage } from './pages/shopkeeper/ShopkeeperAuthPage';
 import { ShopkeeperDashboardPage } from './pages/shopkeeper/ShopkeeperDashboardPage';
 import { AdminAuthPage } from './pages/admin/AdminAuthPage';
 import { AdminDashboardPage } from './pages/admin/AdminDashboardPage';
+import { DeliveryPartnerAuthPage } from './pages/delivery/DeliveryPartnerAuthPage';
+import { DeliveryPartnerDashboardPage } from './pages/delivery/DeliveryPartnerDashboardPage';
 import {
   AppEntryMode,
   Booking,
   Customer,
   CustomerCoordinates,
+  DeliveryPartner,
   PaymentRecord,
   PendingCheckoutDraft,
   Product,
@@ -42,6 +45,7 @@ import { authService } from './services/authService';
 import { customerService } from './services/customerService';
 import { shopkeeperService } from './services/shopkeeperService';
 import { adminService } from './services/adminService';
+import { deliveryService } from './services/deliveryService';
 import { cartService, EnrichedCartItem } from './services/cartService';
 import { locationService, LocationServiceError } from './services/locationService';
 
@@ -66,7 +70,8 @@ type AppRoute =
   | { view: 'BOOKING_CONFIRMATION'; bookingRefs: string[] }
   | { view: 'CUSTOMER_ORDERS' }
   | { view: 'SHOPKEEPER_PORTAL' }
-  | { view: 'ADMIN_PORTAL' };
+  | { view: 'ADMIN_PORTAL' }
+  | { view: 'DELIVERY_PARTNER_PORTAL' };
 
 type NativeDenialMode = 'INITIAL' | 'RETURNED_FROM_SETTINGS' | 'REOPENED' | null;
 
@@ -111,6 +116,12 @@ export default function App() {
   );
   const [activeModal, setActiveModal] = useState<ModalSection>(null);
   const [showCustomerAuthModal, setShowCustomerAuthModal] = useState(false);
+  const [customerAuthModalMode, setCustomerAuthModalMode] = useState<'LOGIN' | 'REGISTER'>('LOGIN');
+
+  const openCustomerAuth = useCallback((mode: 'LOGIN' | 'REGISTER' = 'LOGIN') => {
+    setCustomerAuthModalMode(mode);
+    setShowCustomerAuthModal(true);
+  }, []);
 
   const setRoute = useCallback(
     (nextRoute: AppRoute, options?: { replace?: boolean; skipHistory?: boolean }) => {
@@ -153,6 +164,9 @@ export default function App() {
   const [currentAdminSession, setCurrentAdminSession] = useState<ActiveAdminSession | null>(
     null
   );
+  const [currentDeliveryPartner, setCurrentDeliveryPartner] = useState<DeliveryPartner | null>(() =>
+    deliveryService.getCurrentDeliveryPartner()
+  );
 
   const [customerCoords, setCustomerCoords] = useState<CustomerCoordinates | null>(null);
   const [locationStatus, setLocationStatus] = useState<
@@ -182,6 +196,7 @@ export default function App() {
     setCurrentCustomer(customerService.getCurrentCustomer());
     setCurrentShopkeeper(authService.getCurrentShopkeeper());
     setCurrentAdminSession(adminService.getActiveAdminSession());
+    setCurrentDeliveryPartner(deliveryService.getCurrentDeliveryPartner());
     setLanguage(storage.getSettings().language === 'Hindi' ? 'Hindi' : 'English');
   }, []);
 
@@ -442,6 +457,7 @@ export default function App() {
 
       case 'SHOPKEEPER_PORTAL':
       case 'ADMIN_PORTAL':
+      case 'DELIVERY_PARTNER_PORTAL':
         setRoute({ view: 'ENTRY' }, { replace: true });
         return true;
 
@@ -536,7 +552,9 @@ export default function App() {
         ? 'SHOPKEEPER'
         : route.view === 'ADMIN_PORTAL'
           ? 'ADMIN'
-          : 'CUSTOMER';
+          : route.view === 'DELIVERY_PARTNER_PORTAL'
+            ? 'DELIVERY_PARTNER'
+            : 'CUSTOMER';
 
   const maxRadiusKm = appConfig.getShopRadiusKm();
   const sortedPublicShopsWithinRadius = locationService.getPublicShopsSortedByDistance(
@@ -583,11 +601,20 @@ export default function App() {
       case 'ENTRY':
         return (
           <EntryPage
-            onContinueAsCustomer={() => {
+            onOpenCustomerLogin={() => openCustomerAuth('LOGIN')}
+            onOpenCustomerRegister={() => openCustomerAuth('REGISTER')}
+            onSkipForNow={() => {
               window.scrollTo({ top: 0, behavior: 'smooth' });
               setRoute({ view: 'CUSTOMER_HOME' });
             }}
-            onOpenCustomerLogin={() => setShowCustomerAuthModal(true)}
+            onExploreLocalShops={() => {
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+              setRoute({ view: 'CUSTOMER_HOME' });
+            }}
+            onOpenDeliveryPartnerLogin={() => {
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+              setRoute({ view: 'DELIVERY_PARTNER_PORTAL' });
+            }}
             onOpenShopkeeperPortal={() => {
               window.scrollTo({ top: 0, behavior: 'smooth' });
               setRoute({ view: 'SHOPKEEPER_PORTAL' });
@@ -602,8 +629,9 @@ export default function App() {
       case 'CUSTOMER_HOME':
         return (
           <CustomerHomePage
-            shops={sortedPublicShopsWithinRadius}
-            maxRadiusKm={maxRadiusKm}
+            shops={shops}
+            products={products}
+            sponsorMap={sponsorMap}
             customerCoords={customerCoords}
             locationStatus={locationStatus}
             locationError={locationError}
@@ -613,6 +641,24 @@ export default function App() {
             onSelectShop={(shopId) => {
               window.scrollTo({ top: 0, behavior: 'smooth' });
               setRoute({ view: 'SHOP_PRODUCTS', shopId });
+            }}
+            onSelectProduct={(productId) => {
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+              setRoute({ view: 'PRODUCT_DETAILS', productId });
+            }}
+            onOpenCustomerLogin={() => openCustomerAuth('LOGIN')}
+            onOpenCustomerRegister={() => openCustomerAuth('REGISTER')}
+            onOpenDeliveryPartnerLogin={() => {
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+              setRoute({ view: 'DELIVERY_PARTNER_PORTAL' });
+            }}
+            onOpenShopkeeperPortal={() => {
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+              setRoute({ view: 'SHOPKEEPER_PORTAL' });
+            }}
+            onOpenAdminPortal={() => {
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+              setRoute({ view: 'ADMIN_PORTAL' });
             }}
           />
         );
@@ -826,7 +872,12 @@ export default function App() {
             shopService.getShopByShopkeeperId(currentShopkeeper.shopkeeperId)
           : undefined;
 
-        if (!currentShopkeeper || !skShop || currentShopkeeper.profileStatus !== 'COMPLETED') {
+        if (
+          !currentShopkeeper ||
+          !skShop ||
+          currentShopkeeper.approvalStatus !== 'APPROVED' ||
+          currentShopkeeper.profileStatus !== 'COMPLETED'
+        ) {
           return (
             <ShopkeeperAuthPage
               onBackToEntry={() => setRoute({ view: 'ENTRY' })}
@@ -889,6 +940,35 @@ export default function App() {
           />
         );
       }
+
+      case 'DELIVERY_PARTNER_PORTAL':
+        if (!currentDeliveryPartner) {
+          return (
+            <DeliveryPartnerAuthPage
+              onSuccess={(partner) => {
+                setCurrentDeliveryPartner(partner);
+                syncData();
+              }}
+              onBackToHome={() => {
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                setRoute({ view: 'ENTRY' });
+              }}
+            />
+          );
+        }
+
+        return (
+          <DeliveryPartnerDashboardPage
+            partner={currentDeliveryPartner}
+            onLogout={() => {
+              deliveryService.logout();
+              setCurrentDeliveryPartner(null);
+              syncData();
+              setRoute({ view: 'ENTRY' });
+            }}
+            onRefreshPartner={() => syncData()}
+          />
+        );
     }
   };
 
@@ -924,6 +1004,7 @@ export default function App() {
           loggedInCustomer={currentCustomer}
           loggedInShopkeeper={currentShopkeeper}
           loggedInAdmin={currentAdminSession}
+          loggedInDeliveryPartner={currentDeliveryPartner}
           onToggleTheme={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}
           onOpenCart={() => setRoute({ view: 'CUSTOMER_CART' })}
           onOpenOrders={() => setRoute({ view: 'CUSTOMER_ORDERS' })}
@@ -946,6 +1027,12 @@ export default function App() {
             syncData();
             setRoute({ view: 'ENTRY' });
           }}
+          onLogoutDeliveryPartner={() => {
+            deliveryService.logout();
+            setCurrentDeliveryPartner(null);
+            syncData();
+            setRoute({ view: 'ENTRY' });
+          }}
           onOpenAdminPortal={() => {
             window.scrollTo({ top: 0, behavior: 'smooth' });
             setRoute({ view: 'ADMIN_PORTAL' });
@@ -957,6 +1044,8 @@ export default function App() {
               setRoute({ view: 'SHOPKEEPER_PORTAL' });
             } else if (currentMode === 'ADMIN') {
               setRoute({ view: 'ADMIN_PORTAL' });
+            } else if (currentMode === 'DELIVERY_PARTNER') {
+              setRoute({ view: 'DELIVERY_PARTNER_PORTAL' });
             } else {
               setRoute({ view: 'ENTRY' });
             }
@@ -1046,11 +1135,15 @@ export default function App() {
 
         <CustomerAuthModal
           isOpen={showCustomerAuthModal}
+          initialMode={customerAuthModalMode}
           currentCustomer={currentCustomer}
           onClose={() => setShowCustomerAuthModal(false)}
           onAuthSuccess={(customer) => {
             setCurrentCustomer(customer);
             syncData();
+            if (route.view === 'ENTRY') {
+              setRoute({ view: 'CUSTOMER_HOME' });
+            }
           }}
           onLogout={() => {
             customerService.logoutCustomer();

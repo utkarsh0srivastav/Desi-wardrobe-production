@@ -46,6 +46,10 @@ export const ShopProfileSetupPage: React.FC<ShopProfileSetupPageProps> = ({
   const [longitude, setLongitude] = useState<number>(shop.longitude);
   const [locationName, setLocationName] = useState(shop.locationName);
   const [shopState, setShopState] = useState<string>(() => resolveShopState(shop));
+  const [shopkeeperUpiId, setShopkeeperUpiId] = useState(shop.shopkeeperUpiId || '');
+  const [openingTime, setOpeningTime] = useState(shop.openingTime || '10:00 AM');
+  const [closingTime, setClosingTime] = useState(shop.closingTime || '09:00 PM');
+  const [status, setStatus] = useState<'OPEN' | 'CLOSED'>(shop.status === 'CLOSED' ? 'CLOSED' : 'OPEN');
 
   const [isMapOpen, setIsMapOpen] = useState(false);
   const [autoLocateOnMapOpen, setAutoLocateOnMapOpen] = useState(false);
@@ -112,6 +116,10 @@ export const ShopProfileSetupPage: React.FC<ShopProfileSetupPageProps> = ({
         longitude,
         locationName,
         state: shopState || locationService.extractStateFromLocationText(locationName),
+        shopkeeperUpiId,
+        openingTime,
+        closingTime,
+        status,
         shopStatus: shop.shopStatus || 'ACTIVE',
         profileStatus: 'COMPLETED',
       });
@@ -396,6 +404,90 @@ export const ShopProfileSetupPage: React.FC<ShopProfileSetupPageProps> = ({
           >
             <Tag className="w-4 h-4 shrink-0" />
             <span>BARGAINING AVAILABLE</span>
+          </button>
+        </div>
+      </div>
+
+      {/* UPI ID */}
+      <div className="space-y-1.5 pt-2 border-t border-[var(--border-subtle)]">
+        <label className="block text-xs font-semibold text-[var(--text-primary)]">
+          Shopkeeper UPI ID <span className="text-[var(--text-muted)] font-normal">(for receiving remaining product payment)</span>
+        </label>
+        <input
+          type="text"
+          value={shopkeeperUpiId}
+          onChange={(e) => setShopkeeperUpiId(e.target.value)}
+          placeholder="e.g. shopname@bank or 9876543210@paytm"
+          className="w-full min-h-[46px] px-4 py-2.5 rounded-2xl bg-[var(--bg-primary)] border border-[var(--border-subtle)] text-sm font-mono-tabular text-[var(--text-primary)]"
+        />
+        <p className="text-[11px] text-[var(--text-muted)]">
+          This UPI ID is displayed on customer order summaries for direct payment of the remaining amount upon pickup or delivery.
+        </p>
+      </div>
+
+      {/* Operating Hours & Status */}
+      <div className="space-y-3 pt-2 border-t border-[var(--border-subtle)]">
+        <div className="flex items-center justify-between">
+          <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-primary)]">
+            Operating Hours & Store Status
+          </label>
+          <span
+            className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
+              status === 'OPEN'
+                ? 'bg-emerald-500/15 text-[var(--status-success)]'
+                : 'bg-red-500/15 text-[var(--status-danger)]'
+            }`}
+          >
+            {status === 'OPEN' ? '🟢 Currently OPEN' : '🔴 Currently CLOSED'}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-semibold text-[var(--text-secondary)] mb-1">
+              Opening Time
+            </label>
+            <input
+              type="text"
+              value={openingTime}
+              onChange={(e) => setOpeningTime(e.target.value)}
+              placeholder="10:00 AM"
+              className="w-full min-h-[44px] px-3.5 py-2 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-subtle)] text-sm text-[var(--text-primary)]"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-[var(--text-secondary)] mb-1">
+              Closing Time
+            </label>
+            <input
+              type="text"
+              value={closingTime}
+              onChange={(e) => setClosingTime(e.target.value)}
+              placeholder="09:00 PM"
+              className="w-full min-h-[44px] px-3.5 py-2 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-subtle)] text-sm text-[var(--text-primary)]"
+            />
+          </div>
+        </div>
+
+        <div className="p-4 rounded-2xl bg-[var(--bg-primary)] border border-[var(--border-subtle)] flex items-center justify-between gap-3">
+          <div>
+            <div className="text-xs font-bold text-[var(--text-primary)]">Store Online / Open Toggle</div>
+            <div className="text-[11px] text-[var(--text-muted)] mt-0.5">
+              {status === 'OPEN'
+                ? 'Your shop is shown as OPEN to local customers.'
+                : 'Your shop is marked CLOSED. Customers see that you are currently not taking orders.'}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setStatus((prev) => (prev === 'OPEN' ? 'CLOSED' : 'OPEN'))}
+            className={`min-h-[40px] px-4 py-1.5 rounded-xl text-xs font-bold transition-colors shrink-0 ${
+              status === 'OPEN'
+                ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                : 'bg-red-600 hover:bg-red-700 text-white'
+            }`}
+          >
+            {status === 'OPEN' ? 'TOGGLE TO CLOSED' : 'TOGGLE TO OPEN'}
           </button>
         </div>
       </div>

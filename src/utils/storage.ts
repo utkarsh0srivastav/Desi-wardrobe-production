@@ -12,6 +12,12 @@ import {
   CustomerCoordinates,
   AppSettings,
   PendingCheckoutDraft,
+  DeliveryPartner,
+  DeliveryAssignment,
+  ForcefulCancellationRequest,
+  DeliveryMode,
+  TemporaryCoordinateRecord,
+  ShopkeeperNotification,
 } from '../types/models';
 
 /**
@@ -38,10 +44,18 @@ const STORAGE_KEYS = {
   ACTIVE_CUSTOMER_ID: 'dw_v1_active_customer_id',
   ACTIVE_ADMIN_SESSION: 'dw_v1_active_admin_session',
   CUSTOMER_COORDS: 'dw_v1_customer_coords',
+  CUSTOMER_COORDS_EXPIRES_AT: 'dw_v1_customer_coords_expires_at',
+  TEMPORARY_COORDINATES: 'dw_v1_temp_coordinates',
   SETTINGS: 'dw_v1_settings',
   ACTIVE_ROUTE: 'dw_v1_active_route',
   PENDING_CHECKOUT_DRAFT: 'dw_v1_checkout_draft',
   PAYMENT_PAGE_STATE: 'dw_v1_payment_page_state',
+  SELECTED_DELIVERY_MODE: 'dw_v1_selected_delivery_mode',
+  DELIVERY_PARTNERS: 'dw_v1_delivery_partners',
+  ACTIVE_DELIVERY_PARTNER_ID: 'dw_v1_active_delivery_partner_id',
+  DELIVERY_ASSIGNMENTS: 'dw_v1_delivery_assignments',
+  FORCEFUL_CANCELLATIONS: 'dw_v1_forceful_cancellations',
+  SHOPKEEPER_NOTIFICATIONS: 'dw_v1_shopkeeper_notifications',
 } as const;
 
 export interface ActiveAdminSession {
@@ -174,11 +188,94 @@ export const storage = {
   setActiveAdminSession: (session: ActiveAdminSession | null): void =>
     safeWrite(STORAGE_KEYS.ACTIVE_ADMIN_SESSION, session),
 
-  // Customer Geolocation Coordinates
-  getCustomerCoordinates: (): CustomerCoordinates | null =>
-    safeRead<CustomerCoordinates | null>(STORAGE_KEYS.CUSTOMER_COORDS, null),
-  saveCustomerCoordinates: (coords: CustomerCoordinates | null): void =>
-    safeWrite(STORAGE_KEYS.CUSTOMER_COORDS, coords),
+  // Customer Geolocation Coordinates with 5-Minute Privacy Expiration
+  getCustomerCoordinates: (): CustomerCoordinates | null => {
+    try {
+      const expiresAt = safeRead<number>(STORAGE_KEYS.CUSTOMER_COORDS_EXPIRES_AT, 0);
+      if (expiresAt > 0 && Date.now() > expiresAt) {
+        // Check if retained by an active delivery order
+        const bookings = safeRead<Booking[]>(STORAGE_KEYS.BOOKINGS, []);
+        const activeCustId = safeRead<string | null>(STORAGE_KEYS.ACTIVE_CUSTOMER_ID, null);
+        const hasActiveDelivery = bookings.some(
+          (b) =>
+            b.customerId === activeCustId &&
+            b.deliveryMode === 'DELIVERY' &&
+            !['SOLD', 'NOT_SOLD', 'CANCELLED', 'EXPIRED'].includes(b.bookingStatus || b.status)
+        );
+        if (!hasActiveDelivery) {
+          safeWrite(STORAGE_KEYS.CUSTOMER_COORDS, null);
+          safeWrite(STORAGE_KEYS.CUSTOMER_COORDS_EXPIRES_AT, 0);
+          return null;
+        }
+      }
+      return safeRead<CustomerCoordinates | null>(STORAGE_KEYS.CUSTOMER_COORDS, null);
+    } catch {
+      return safeRead<CustomerCoordinates | null>(STORAGE_KEYS.CUSTOMER_COORDS, null);
+    }
+  },
+  saveCustomerCoordinates: (coords: CustomerCoordinates | null, durationMinutes: number = 5): void => {
+    safeWrite(STORAGE_KEYS.CUSTOMER_COORDS, coords);
+    if (coords) {
+      safeWrite(STORAGE_KEYS.CUSTOMER_COORDS_EXPIRES_AT, Date.now() + durationMinutes * 60 * 1000);
+    } else {
+      safeWrite(STORAGE_KEYS.CUSTOMER_COORDS_EXPIRES_AT, 0);
+    }
+  },
+  clearCustomerCoordinatesIfExpired: (): void => {
+    const expiresAt = safeRead<number>(STORAGE_KEYS.CUSTOMER_COORDS_EXPIRES_AT, 0);
+    if (expiresAt > 0 && Date.now() > expiresAt) {
+      const bookings = safeRead<Booking[]>(STORAGE_KEYS.BOOKINGS, []);
+      const activeCustId = safeRead<string | null>(STORAGE_KEYS.ACTIVE_CUSTOMER_ID, null);
+      const hasActiveDelivery = bookings.some(
+        (b) =>
+          b.customerId === activeCustId &&
+          b.deliveryMode === 'DELIVERY' &&
+          !['SOLD', 'NOT_SOLD', 'CANCELLED', 'EXPIRED'].includes(b.bookingStatus || b.status)
+      );
+      if (!hasActiveDelivery) {
+        safeWrite(STORAGE_KEYS.CUSTOMER_COORDS, null);
+        safeWrite(STORAGE_KEYS.CUSTOMER_COORDS_EXPIRES_AT, 0);
+      }
+    }
+  },
+
+  // Selected Delivery Mode (Takeaway vs Delivery)
+  getSelectedDeliveryMode: (): DeliveryMode =>
+    safeRead<DeliveryMode>(STORAGE_KEYS.SELECTED_DELIVERY_MODE, 'TAKEAWAY'),
+  saveSelectedDeliveryMode: (mode: DeliveryMode): void =>
+    safeWrite(STORAGE_KEYS.SELECTED_DELIVERY_MODE, mode),
+
+  // Delivery Partners Directory
+  getDeliveryPartners: (): DeliveryPartner[] =>
+    safeRead<DeliveryPartner[]>(STORAGE_KEYS.DELIVERY_PARTNERS, []),
+  saveDeliveryPartners: (partners: DeliveryPartner[]): void =>
+    safeWrite(STORAGE_KEYS.DELIVERY_PARTNERS, partners),
+
+  // Active Delivery Partner Session
+  getActiveDeliveryPartnerId: (): string | null =>
+    safeRead<string | null>(STORAGE_KEYS.ACTIVE_DELIVERY_PARTNER_ID, null),
+  setActiveDeliveryPartnerId: (partnerId: string | null): void =>
+    safeWrite(STORAGE_KEYS.ACTIVE_DELIVERY_PARTNER_ID, partnerId),
+
+  // Admin Assigned Deliveries
+  getDeliveryAssignments: (): DeliveryAssignment[] =>
+    safeRead<DeliveryAssignment[]>(STORAGE_KEYS.DELIVERY_ASSIGNMENTS, []),
+  saveDeliveryAssignments: (assignments: DeliveryAssignment[]): void =>
+    safeWrite(STORAGE_KEYS.DELIVERY_ASSIGNMENTS, assignments),
+
+  // Forceful Cancellation Requests Queue
+  getForcefulCancellations: (): ForcefulCancellationRequest[] =>
+    safeRead<ForcefulCancellationRequest[]>(STORAGE_KEYS.FORCEFUL_CANCELLATIONS, []),
+  saveForcefulCancellations: (requests: ForcefulCancellationRequest[]): void =>
+    safeWrite(STORAGE_KEYS.FORCEFUL_CANCELLATIONS, requests),
+
+  // Shopkeeper Notifications
+  getShopkeeperNotifications: (shopkeeperId?: string): ShopkeeperNotification[] => {
+    const list = safeRead<ShopkeeperNotification[]>(STORAGE_KEYS.SHOPKEEPER_NOTIFICATIONS, []);
+    return shopkeeperId ? list.filter((n) => n.shopkeeperId === shopkeeperId) : list;
+  },
+  saveShopkeeperNotifications: (notifications: ShopkeeperNotification[]): void =>
+    safeWrite(STORAGE_KEYS.SHOPKEEPER_NOTIFICATIONS, notifications),
 
   // App Settings
   getSettings: (): AppSettings =>

@@ -15,9 +15,10 @@ import {
   Store,
   Home,
   Lock,
+  Truck,
 } from 'lucide-react';
 import { BrandLogo } from './BrandLogo';
-import { AppEntryMode, Customer, Shopkeeper, ThemeMode } from '../types/models';
+import { AppEntryMode, Customer, DeliveryPartner, Shopkeeper, ThemeMode } from '../types/models';
 import { ActiveAdminSession } from '../utils/storage';
 import { getCurrentLanguage, translations } from '../utils/i18n';
 import { ActiveModalType, ModalSection } from './InfoModals';
@@ -31,6 +32,7 @@ interface HeaderMenuProps {
   loggedInCustomer: Customer | null;
   loggedInShopkeeper: Shopkeeper | null;
   loggedInAdmin: ActiveAdminSession | null;
+  loggedInDeliveryPartner?: DeliveryPartner | null;
   onToggleTheme: () => void;
   onOpenCart: () => void;
   onOpenOrders: () => void;
@@ -38,6 +40,7 @@ interface HeaderMenuProps {
   onLogoutCustomer: () => void;
   onLogoutShopkeeper: () => void;
   onLogoutAdmin: () => void;
+  onLogoutDeliveryPartner?: () => void;
   onOpenAdminPortal?: () => void;
   onGoHome: () => void;
   onReturnToEntry: () => void;
@@ -51,6 +54,7 @@ export const HeaderMenu: React.FC<HeaderMenuProps> = ({
   loggedInCustomer,
   loggedInShopkeeper,
   loggedInAdmin,
+  loggedInDeliveryPartner,
   onToggleTheme,
   onOpenCart,
   onOpenOrders,
@@ -58,6 +62,7 @@ export const HeaderMenu: React.FC<HeaderMenuProps> = ({
   onLogoutCustomer,
   onLogoutShopkeeper,
   onLogoutAdmin,
+  onLogoutDeliveryPartner,
   onOpenAdminPortal,
   onGoHome,
   onReturnToEntry,
@@ -97,7 +102,9 @@ export const HeaderMenu: React.FC<HeaderMenuProps> = ({
                 ? t.shopkeeperPortal
                 : mode === 'ADMIN'
                   ? t.adminPortal
-                  : t.localFashionMarketplace}
+                  : mode === 'DELIVERY_PARTNER'
+                    ? 'Delivery Partner Portal'
+                    : t.localFashionMarketplace}
             </div>
           </div>
         </button>
@@ -212,6 +219,30 @@ export const HeaderMenu: React.FC<HeaderMenuProps> = ({
                         onClick={() => {
                           setMenuOpen(false);
                           onLogoutAdmin();
+                        }}
+                        className="px-2.5 py-1.5 rounded-xl bg-red-500/10 text-[var(--status-danger)] text-xs font-semibold flex items-center gap-1"
+                      >
+                        <LogOut className="w-3.5 h-3.5" />
+                        <span>{t.logout}</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {mode === 'DELIVERY_PARTNER' && loggedInDeliveryPartner && (
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="truncate">
+                        <div className="text-xs font-bold text-[var(--text-primary)] truncate">
+                          {loggedInDeliveryPartner.name}
+                        </div>
+                        <div className="text-[11px] font-mono-tabular text-blue-600 truncate">
+                          {loggedInDeliveryPartner.partnerId}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMenuOpen(false);
+                          onLogoutDeliveryPartner?.();
                         }}
                         className="px-2.5 py-1.5 rounded-xl bg-red-500/10 text-[var(--status-danger)] text-xs font-semibold flex items-center gap-1"
                       >

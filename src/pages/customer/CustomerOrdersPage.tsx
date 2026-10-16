@@ -15,11 +15,13 @@ import {
   ShoppingBag,
   Lock,
   UserCheck,
+  Truck,
 } from 'lucide-react';
-import { Booking, Customer } from '../../types/models';
+import { Booking, Customer, ForcefulCancellationRequest } from '../../types/models';
 import { bookingService } from '../../services/bookingService';
 import { shopService } from '../../services/shopService';
 import { locationService } from '../../services/locationService';
+import { deliveryService } from '../../services/deliveryService';
 import { ResilientImage } from '../../components/ResilientImage';
 
 interface CustomerOrdersPageProps {
@@ -36,8 +38,24 @@ export const CustomerOrdersPage: React.FC<CustomerOrdersPageProps> = ({
   onBackToShops,
 }) => {
   const [orders, setOrders] = useState<Booking[]>([]);
+  const [orderModeFilter, setOrderModeFilter] = useState<'ALL' | 'TAKEAWAY' | 'DELIVERY'>('ALL');
+  const [cancellations, setCancellations] = useState<ForcefulCancellationRequest[]>([]);
+  const [cancellingOrder, setCancellingOrder] = useState<Booking | null>(null);
+  const [cancelReason, setCancelReason] = useState<string>('Emergency / Change of plans');
+  const [cancelCustomNotes, setCancelCustomNotes] = useState<string>('');
+  const [cancelSubmitting, setCancelSubmitting] = useState(false);
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const authenticatedCustomerId = loggedInCustomer?.customerId || null;
+
+  const refreshCancellations = () => {
+    setCancellations(deliveryService.getForcefulCancellations());
+  };
+
+  useEffect(() => {
+    refreshCancellations();
+  }, []);
 
   useEffect(() => {
     // Strictly clear and block order loading when Customer is not logged in
@@ -197,6 +215,14 @@ export const CustomerOrdersPage: React.FC<CustomerOrdersPageProps> = ({
   }
 
   const scopedOrders = orders.filter((o) => o.customerId === authenticatedCustomerId);
+  const takeawayCount = scopedOrders.filter((o) => (o.deliveryMode || 'TAKEAWAY') === 'TAKEAWAY').length;
+  const deliveryCount = scopedOrders.filter((o) => o.deliveryMode === 'DELIVERY').length;
+
+  const displayedOrders = scopedOrders.filter((o) => {
+    if (orderModeFilter === 'TAKEAWAY') return (o.deliveryMode || 'TAKEAWAY') === 'TAKEAWAY';
+    if (orderModeFilter === 'DELIVERY') return o.deliveryMode === 'DELIVERY';
+    return true;
+  });
 
   return (
     <div className="max-w-3xl mx-auto px-4 pt-5 pb-20 space-y-6">
@@ -224,22 +250,66 @@ export const CustomerOrdersPage: React.FC<CustomerOrdersPageProps> = ({
         </div>
       </div>
 
+      {/* Takeaway vs Delivery Order History Separation Tabs (Section 14 & 15) */}
+      <div className="flex items-center gap-2 border-b border-[var(--border-subtle)] pb-2 overflow-x-auto">
+        <button
+          type="button"
+          onClick={() => setOrderModeFilter('ALL')}
+          className={`min-h-[38px] px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
+            orderModeFilter === 'ALL'
+              ? 'bg-[var(--accent-primary)] text-white shadow-xs'
+              : 'bg-[var(--bg-card)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border-subtle)]'
+          }`}
+        >
+          All Orders ({scopedOrders.length})
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setOrderModeFilter('TAKEAWAY')}
+          className={`min-h-[38px] px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+            orderModeFilter === 'TAKEAWAY'
+              ? 'bg-[var(--accent-primary)] text-white shadow-xs'
+              : 'bg-[var(--bg-card)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border-subtle)]'
+          }`}
+        >
+          <ShoppingBag className="w-3.5 h-3.5" />
+          <span>Takeaway ({takeawayCount})</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setOrderModeFilter('DELIVERY')}
+          className={`min-h-[38px] px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+            orderModeFilter === 'DELIVERY'
+              ? 'bg-blue-600 text-white shadow-xs'
+              : 'bg-[var(--bg-card)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border-subtle)]'
+          }`}
+        >
+          <Truck className="w-3.5 h-3.5" />
+          <span>Home Delivery ({deliveryCount})</span>
+        </button>
+      </div>
+
       {/* Scoped Orders List for Authenticated Customer */}
-      {scopedOrders.length === 0 ? (
+      {displayedOrders.length === 0 ? (
         <div className="rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)] p-12 text-center space-y-3">
           <div className="w-14 h-14 rounded-2xl bg-[var(--accent-soft)] text-[var(--accent-primary)] flex items-center justify-center mx-auto">
             <ClipboardList className="w-7 h-7" />
           </div>
           <h2 className="font-display text-xl font-bold text-[var(--text-primary)]">
-            No Bookings Found
+            No {orderModeFilter === 'TAKEAWAY' ? 'Takeaway ' : orderModeFilter === 'DELIVERY' ? 'Delivery ' : ''}Orders Found
           </h2>
           <p className="text-xs text-[var(--text-secondary)] max-w-sm mx-auto">
-            You have not placed any product bookings yet.
+            {scopedOrders.length === 0
+              ? 'You have not placed any product bookings yet.'
+              : `You have no ${orderModeFilter.toLowerCase()} orders.`}
           </p>
         </div>
       ) : (
         <div className="space-y-4">
-          {scopedOrders.map((order) => {
+          {displayedOrders.map((order) => {
+            const isDelivery = order.deliveryMode === 'DELIVERY';
             const currentStatus = order.bookingStatus || order.status;
             const isRejected =
               order.paymentStatus === 'REJECTED' ||
@@ -389,32 +459,130 @@ export const CustomerOrdersPage: React.FC<CustomerOrdersPageProps> = ({
                 )}
 
                 {isConfirmedActive && (
-                  <div className="p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-                    <div className="flex items-center gap-2 font-semibold text-emerald-700 dark:text-emerald-300">
-                      <Clock className="w-4 h-4 shrink-0" />
-                      <span>
-                        Pickup Deadline (48h):{' '}
-                        {new Date(order.pickupDeadline).toLocaleString('en-IN', {
-                          day: 'numeric',
-                          month: 'short',
-                          year: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
-                        {hasFinalBookingId ? ` · Booking ID: ${order.bookingId}` : ''}
-                      </span>
-                    </div>
-                    {order.confirmedAt && (
-                      <div className="text-[11px] font-mono-tabular text-emerald-700/80 dark:text-emerald-300/80">
-                        Confirmed:{' '}
-                        {new Date(order.confirmedAt).toLocaleString('en-IN', {
-                          day: 'numeric',
-                          month: 'short',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
+                  <div className="space-y-2">
+                    {isDelivery ? (
+                      <div className="p-3 rounded-2xl bg-blue-500/10 border border-blue-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                        <div className="flex items-center gap-2 font-semibold text-blue-700 dark:text-blue-300">
+                          <Truck className="w-4 h-4 shrink-0" />
+                          <span>
+                            Home Delivery Order Confirmed
+                            {hasFinalBookingId ? ` · Booking ID: ${order.bookingId}` : ''}
+                          </span>
+                        </div>
+                        {order.confirmedAt && (
+                          <div className="text-[11px] font-mono-tabular text-blue-700/80 dark:text-blue-300/80">
+                            Confirmed:{' '}
+                            {new Date(order.confirmedAt).toLocaleString('en-IN', {
+                              day: 'numeric',
+                              month: 'short',
+                              year: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                        <div className="flex items-center gap-2 font-semibold text-emerald-700 dark:text-emerald-300">
+                          <Clock className="w-4 h-4 shrink-0" />
+                          <span>
+                            Pickup Deadline (48h):{' '}
+                            {new Date(order.pickupDeadline).toLocaleString('en-IN', {
+                              day: 'numeric',
+                              month: 'short',
+                              year: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                            {hasFinalBookingId ? ` · Booking ID: ${order.bookingId}` : ''}
+                          </span>
+                        </div>
+                        {order.confirmedAt && (
+                          <div className="text-[11px] font-mono-tabular text-emerald-700/80 dark:text-emerald-300/80">
+                            Confirmed:{' '}
+                            {new Date(order.confirmedAt).toLocaleString('en-IN', {
+                              day: 'numeric',
+                              month: 'short',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </div>
+                        )}
                       </div>
                     )}
+
+                    {/* Delivery Partner status — strictly for Delivery orders, never takeaway */}
+                    {isDelivery && order.assignedPartnerName && (
+                      <div className="p-3 rounded-2xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-between gap-2 text-xs">
+                        <div className="flex items-center gap-2 text-blue-700 dark:text-blue-300 font-semibold">
+                          <UserCheck className="w-4 h-4 shrink-0" />
+                          <span>
+                            Delivery Partner Assigned: <strong>{order.assignedPartnerName}</strong> ({order.assignedPartnerId || 'DP'})
+                          </span>
+                        </div>
+                        <span className="px-2 py-0.5 rounded-lg bg-blue-500/20 text-blue-700 dark:text-blue-300 text-[10px] font-bold uppercase">
+                          Out For Delivery
+                        </span>
+                      </div>
+                    )}
+
+                    {isDelivery && !order.assignedPartnerName && (
+                      <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-2 text-xs">
+                        <div className="flex items-center gap-2 text-amber-700 dark:text-amber-300 font-semibold">
+                          <Hourglass className="w-4 h-4 shrink-0" />
+                          <span>
+                            Delivery Partner: Waiting for delivery assignment
+                          </span>
+                        </div>
+                        <span className="px-2 py-0.5 rounded-lg bg-amber-500/20 text-amber-700 dark:text-amber-300 text-[10px] font-bold uppercase">
+                          Pending Assignment
+                        </span>
+                      </div>
+                    )}
+
+                    {(() => {
+                      const pendingCancel = cancellations.find(
+                        (c) =>
+                          (c.orderId === order.bookingId ||
+                            c.bookingReference === order.bookingReference) &&
+                          c.status === 'PENDING'
+                      );
+                      const rejectedCancel = cancellations.find(
+                        (c) =>
+                          (c.orderId === order.bookingId ||
+                            c.bookingReference === order.bookingReference) &&
+                          c.status === 'REJECTED'
+                      );
+
+                      if (pendingCancel) {
+                        return (
+                          <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center gap-2 text-xs text-amber-800 dark:text-amber-200 font-medium">
+                            <Hourglass className="w-4 h-4 shrink-0" />
+                            <span>
+                              Cancellation Request: <strong>UNDER ADMIN REVIEW</strong> ({pendingCancel.reason})
+                            </span>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                          {rejectedCancel && (
+                            <span className="text-[11px] text-[var(--status-danger)] font-semibold">
+                              Cancellation request declined: {rejectedCancel.adminNotes || 'Contact store for details'}
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => setCancellingOrder(order)}
+                            className="min-h-[32px] px-3 py-1 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-[var(--status-danger)] text-[11px] font-bold tracking-wide transition-colors ml-auto"
+                          >
+                            REQUEST CANCELLATION
+                          </button>
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
 
@@ -449,6 +617,128 @@ export const CustomerOrdersPage: React.FC<CustomerOrdersPageProps> = ({
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Forceful Cancellation Modal */}
+      {cancellingOrder && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)] p-6 space-y-4 shadow-xl">
+            <div className="flex items-center justify-between">
+              <h3 className="font-display text-lg font-bold text-[var(--text-primary)]">
+                Request Order Cancellation
+              </h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setCancellingOrder(null);
+                  setCancelCustomNotes('');
+                }}
+                className="p-1 rounded-lg hover:bg-[var(--bg-secondary)]"
+              >
+                <XCircle className="w-5 h-5 text-[var(--text-muted)]" />
+              </button>
+            </div>
+
+            <p className="text-xs text-[var(--text-secondary)]">
+              Order: <strong className="font-mono-tabular text-[var(--text-primary)]">{cancellingOrder.bookingId}</strong> ({cancellingOrder.productName})
+            </p>
+
+            <div className="space-y-2">
+              <label className="block text-xs font-semibold text-[var(--text-primary)]">
+                Reason for Cancellation:
+              </label>
+              <select
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                className="w-full min-h-[42px] px-3 py-2 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-subtle)] text-xs text-[var(--text-primary)]"
+              >
+                <option value="Emergency / Change of plans">Emergency / Change of plans</option>
+                <option value="Delay in delivery">Delay in delivery</option>
+                <option value="Ordered by mistake">Ordered by mistake</option>
+                <option value="Found alternative product">Found alternative product</option>
+                <option value="Other">Other reason</option>
+              </select>
+            </div>
+
+            <div className="space-y-1">
+              <label className="block text-xs font-semibold text-[var(--text-primary)]">
+                Additional Notes (optional):
+              </label>
+              <textarea
+                rows={3}
+                value={cancelCustomNotes}
+                onChange={(e) => setCancelCustomNotes(e.target.value)}
+                placeholder="Provide details to assist Admin approval..."
+                className="w-full p-3 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-subtle)] text-xs text-[var(--text-primary)]"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setCancellingOrder(null);
+                  setCancelCustomNotes('');
+                }}
+                className="min-h-[38px] px-4 py-2 rounded-xl bg-[var(--bg-secondary)] text-xs font-bold text-[var(--text-primary)]"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                disabled={cancelSubmitting}
+                onClick={async () => {
+                  if (!cancellingOrder) return;
+                  setCancelSubmitting(true);
+                  try {
+                    deliveryService.submitForcefulCancellation({
+                      orderId: cancellingOrder.bookingId,
+                      bookingReference:
+                        cancellingOrder.bookingReference || cancellingOrder.bookingId,
+                      shopId: cancellingOrder.shopId,
+                      shopName: cancellingOrder.shopName,
+                      partnerId: cancellingOrder.assignedPartnerId,
+                      partnerName: cancellingOrder.assignedPartnerName,
+                      reason: cancelReason,
+                      customReason: cancelCustomNotes.trim() || undefined,
+                    });
+                    refreshCancellations();
+                    setToastMsg('Cancellation request submitted to Admin.');
+                    setTimeout(() => setToastMsg(null), 4000);
+                    setCancellingOrder(null);
+                    setCancelCustomNotes('');
+                  } catch (err) {
+                    setErrorMsg(
+                      err instanceof Error
+                        ? err.message
+                        : 'Failed to submit cancellation request.'
+                    );
+                    setTimeout(() => setErrorMsg(null), 4000);
+                  } finally {
+                    setCancelSubmitting(false);
+                  }
+                }}
+                className="min-h-[38px] px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-xs font-bold"
+              >
+                {cancelSubmitting ? 'Submitting...' : 'Submit Cancellation'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {toastMsg && (
+        <div className="fixed bottom-6 right-6 z-50 bg-emerald-600 text-white px-4 py-3 rounded-2xl shadow-lg text-xs font-bold flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4" />
+          <span>{toastMsg}</span>
+        </div>
+      )}
+
+      {errorMsg && (
+        <div className="fixed bottom-6 right-6 z-50 bg-red-600 text-white px-4 py-3 rounded-2xl shadow-lg text-xs font-bold flex items-center gap-2">
+          <AlertCircle className="w-4 h-4" />
+          <span>{errorMsg}</span>
         </div>
       )}
     </div>

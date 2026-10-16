@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { QRCodeCanvas } from 'qrcode.react';
 import {
   ShieldCheck,
   Store,
@@ -21,11 +22,19 @@ import {
   Download,
   Search,
   Sparkles,
+  Truck,
+  Bike,
+  QrCode,
+  UserCheck,
+  RotateCcw,
 } from 'lucide-react';
 import { appConfig, PlatformConfig } from '../../config/appConfig';
 import {
   Booking,
   Customer,
+  DeliveryPartner,
+  DeliveryPartnerStatus,
+  ForcefulCancellationRequest,
   getShopSponsorRemainingDays,
   INDIAN_STATES,
   isShopCurrentlySponsored,
@@ -39,6 +48,7 @@ import {
   SponsorDurationValue,
 } from '../../types/models';
 import { adminService } from '../../services/adminService';
+import { deliveryService } from '../../services/deliveryService';
 import {
   isPaymentApprovedStatus,
   isPaymentRejectedStatus,
@@ -74,6 +84,8 @@ type AdminTab =
   | 'SHOPS'
   | 'ORDERS'
   | 'PAYMENTS'
+  | 'DELIVERY_PARTNERS'
+  | 'CANCELLATIONS'
   | 'SETTINGS';
 
 export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
@@ -90,6 +102,41 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const [activeTab, setActiveTab] = useState<AdminTab>('DASHBOARD');
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Delivery Partners State
+  const [deliveryPartners, setDeliveryPartners] = useState<DeliveryPartner[]>(() =>
+    deliveryService.getDeliveryPartners()
+  );
+  const [showAddPartnerModal, setShowAddPartnerModal] = useState(false);
+  const [newPartnerName, setNewPartnerName] = useState('');
+  const [newPartnerMobile, setNewPartnerMobile] = useState('');
+  const [newPartnerUpi, setNewPartnerUpi] = useState('');
+  const [newPartnerStatus, setNewPartnerStatus] = useState<DeliveryPartnerStatus>('ONLINE');
+  const [isSubmittingPartner, setIsSubmittingPartner] = useState(false);
+  const [partnerFilter, setPartnerFilter] = useState<'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'SUSPENDED'>('ALL');
+  const [reviewingPartner, setReviewingPartner] = useState<DeliveryPartner | null>(null);
+  const [partnerRejectionReason, setPartnerRejectionReason] = useState<string>('');
+
+  // Manual Assignment State (Assign partner to booking)
+  const [assigningBooking, setAssigningBooking] = useState<Booking | null>(null);
+  const [selectedPartnerIdForAssign, setSelectedPartnerIdForAssign] = useState<string>('');
+
+  // Forceful Cancellation Requests State
+  const [cancellationRequests, setCancellationRequests] = useState<
+    ForcefulCancellationRequest[]
+  >(() => deliveryService.getForcefulCancellations());
+  const [cancellationFilter, setCancellationFilter] = useState<'PENDING' | 'ALL'>('PENDING');
+  const [reviewingCancelRequestId, setReviewingCancelRequestId] = useState<string | null>(null);
+  const [cancelReviewNotes, setCancelReviewNotes] = useState<string>('');
+
+  const refreshDeliveryData = () => {
+    setDeliveryPartners(deliveryService.getDeliveryPartners());
+    setCancellationRequests(deliveryService.getForcefulCancellations());
+  };
+
+  useEffect(() => {
+    refreshDeliveryData();
+  }, []);
 
   // Register Shopkeeper State (Mobile ONLY)
   const [preRegMobile, setPreRegMobile] = useState('');
@@ -156,6 +203,16 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   ).length;
   const expiredBookingsCount = bookings.filter(
     (b) => (b.bookingStatus || b.status) === 'EXPIRED'
+  ).length;
+  const onlinePartnersCount = deliveryPartners.filter((p) => p.status === 'ONLINE').length;
+  const currentlyDeliveringCount = deliveryPartners.filter(
+    (p) => p.status === 'CURRENTLY_DELIVERING'
+  ).length;
+  const pendingCancellationsCount = cancellationRequests.filter(
+    (c) => c.status === 'PENDING'
+  ).length;
+  const pendingPartnersCount = deliveryPartners.filter(
+    (p) => p.approvalStatus === 'PENDING'
   ).length;
 
   // Section 18: Register Shopkeeper (Mobile ONLY)
@@ -337,13 +394,23 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       badge: pendingPaymentsCount > 0 ? pendingPaymentsCount : undefined,
     },
     {
+      id: 'DELIVERY_PARTNERS',
+      label: `DELIVERY PARTNERS (${deliveryPartners.length})`,
+      badge: pendingPartnersCount > 0 ? pendingPartnersCount : undefined,
+    },
+    {
+      id: 'CANCELLATIONS',
+      label: 'CANCELLATIONS',
+      badge: pendingCancellationsCount > 0 ? pendingCancellationsCount : undefined,
+    },
+    { id: 'ORDERS', label: `ORDERS (${bookings.length})` },
+    {
       id: 'SHOPKEEPER_REQUESTS',
       label: 'SHOPKEEPER REQUESTS',
       badge: pendingShopkeeperRequestsCount > 0 ? pendingShopkeeperRequestsCount : undefined,
     },
     { id: 'REGISTER_SHOPKEEPER', label: 'REGISTER SHOPKEEPER' },
     { id: 'SHOPS', label: `SHOPS (${totalShopsCount})` },
-    { id: 'ORDERS', label: `ORDERS (${bookings.length})` },
     {
       id: 'CUSTOMER_REQUESTS',
       label: `CUSTOMERS (${customers.length})`,
@@ -552,10 +619,42 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
               </div>
               <div className="text-[11px] text-[var(--text-muted)]">Past 48h window</div>
             </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('DELIVERY_PARTNERS')}
+              className="text-left p-5 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)] hover:border-blue-600 transition-colors space-y-1.5 shadow-2xs"
+            >
+              <div className="text-xs font-semibold text-[var(--text-secondary)]">
+                Delivery Partners
+              </div>
+              <div className="font-mono-tabular text-3xl font-bold text-blue-600">
+                {onlinePartnersCount}
+              </div>
+              <div className="text-[11px] text-[var(--text-muted)]">
+                {deliveryPartners.length} registered · {currentlyDeliveringCount} on route
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('CANCELLATIONS')}
+              className="text-left p-5 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)] hover:border-red-600 transition-colors space-y-1.5 shadow-2xs"
+            >
+              <div className="text-xs font-semibold text-[var(--text-secondary)]">
+                Cancellations
+              </div>
+              <div className="font-mono-tabular text-3xl font-bold text-[var(--status-danger)]">
+                {pendingCancellationsCount}
+              </div>
+              <div className="text-[11px] text-[var(--text-muted)]">
+                {cancellationRequests.length} total requests
+              </div>
+            </button>
           </div>
 
           {/* Quick Action Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
             <button
               type="button"
               onClick={() => setActiveTab('REGISTER_SHOPKEEPER')}
@@ -566,10 +665,10 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                   Pre-Register Shopkeeper
                 </div>
                 <div className="text-xs text-[var(--text-secondary)] mt-0.5">
-                  Authorize a shopkeeper mobile number
+                  Authorize a mobile number
                 </div>
               </div>
-              <UserPlus className="w-5 h-5 text-[var(--accent-primary)]" />
+              <UserPlus className="w-5 h-5 text-[var(--accent-primary)] shrink-0" />
             </button>
 
             <button
@@ -585,7 +684,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                   {pendingPaymentsCount} awaiting verification
                 </div>
               </div>
-              <CreditCard className="w-5 h-5 text-[var(--accent-primary)]" />
+              <CreditCard className="w-5 h-5 text-[var(--accent-primary)] shrink-0" />
             </button>
 
             <button
@@ -601,7 +700,39 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                   {pendingShopkeeperRequestsCount} pending requests
                 </div>
               </div>
-              <Store className="w-5 h-5 text-[var(--accent-primary)]" />
+              <Store className="w-5 h-5 text-[var(--accent-primary)] shrink-0" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('DELIVERY_PARTNERS')}
+              className="p-5 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)] hover:border-blue-600 text-left flex items-center justify-between transition-colors"
+            >
+              <div>
+                <div className="text-sm font-bold text-[var(--text-primary)]">
+                  Delivery Partners
+                </div>
+                <div className="text-xs text-[var(--text-secondary)] mt-0.5">
+                  {onlinePartnersCount} online & ready
+                </div>
+              </div>
+              <Truck className="w-5 h-5 text-blue-600 shrink-0" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('CANCELLATIONS')}
+              className="p-5 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)] hover:border-red-600 text-left flex items-center justify-between transition-colors"
+            >
+              <div>
+                <div className="text-sm font-bold text-[var(--text-primary)]">
+                  Cancellation Requests
+                </div>
+                <div className="text-xs text-[var(--text-secondary)] mt-0.5">
+                  {pendingCancellationsCount} pending reviews
+                </div>
+              </div>
+              <RotateCcw className="w-5 h-5 text-[var(--status-danger)] shrink-0" />
             </button>
           </div>
         </div>
@@ -1656,11 +1787,586 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         Pickup Deadline: {new Date(b.pickupDeadline).toLocaleString('en-IN')}
                       </span>
                     </div>
+
+                    {/* Manual Delivery Partner Assignment & Mode */}
+                    <div className="pt-2.5 border-t border-[var(--border-subtle)] flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-0.5 rounded-lg bg-[var(--bg-secondary)] font-semibold text-[11px] text-[var(--text-secondary)]">
+                          Mode: {b.deliveryMode === 'DELIVERY' ? 'Home Delivery' : 'Store Pickup'}
+                        </span>
+                        {b.assignedPartnerName ? (
+                          <span className="px-2.5 py-1 rounded-xl bg-blue-500/15 text-blue-700 dark:text-blue-300 font-bold text-[11px] flex items-center gap-1.5">
+                            <Truck className="w-3.5 h-3.5" />
+                            <span>Partner: {b.assignedPartnerName} ({b.assignedPartnerId})</span>
+                          </span>
+                        ) : (
+                          <span className="text-[11px] text-[var(--text-muted)]">
+                            No Partner Assigned
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {b.assignedPartnerName ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAssigningBooking(b);
+                                setSelectedPartnerIdForAssign('');
+                              }}
+                              className="px-2.5 py-1 rounded-xl bg-[var(--bg-secondary)] hover:bg-[var(--border-subtle)] text-[11px] font-bold text-[var(--text-primary)]"
+                            >
+                              Reassign
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                deliveryService.unassignPartnerFromOrder(b.bookingId);
+                                onRefreshData();
+                                refreshDeliveryData();
+                                notify(`Unassigned partner from order ${b.bookingId}.`);
+                              }}
+                              className="px-2.5 py-1 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-[11px] font-bold text-[var(--status-danger)]"
+                            >
+                              Unassign
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAssigningBooking(b);
+                              setSelectedPartnerIdForAssign('');
+                            }}
+                            className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold flex items-center gap-1.5 transition-colors"
+                          >
+                            <Truck className="w-3.5 h-3.5" />
+                            <span>Assign Partner</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 );
               })}
             </div>
           )}
+        </div>
+      )}
+
+      {/* TAB: DELIVERY_PARTNERS — Delivery Partner Directory & Management */}
+      {activeTab === 'DELIVERY_PARTNERS' && (
+        <div className="space-y-6">
+          <div className="rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)] p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xs">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-blue-600 text-white flex items-center justify-center shrink-0">
+                <Truck className="w-6 h-6" />
+              </div>
+              <div>
+                <h2 className="font-display text-2xl font-bold text-[var(--text-primary)]">
+                  Delivery Partner Directory ({deliveryPartners.length})
+                </h2>
+                <p className="text-xs text-[var(--text-secondary)] mt-0.5">
+                  Manage registered delivery partners, view statuses, and handle delivery assignments.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowAddPartnerModal(true)}
+              className="min-h-[44px] px-4 py-2 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-2 self-start sm:self-auto transition-colors shadow-xs"
+            >
+              <UserPlus className="w-4 h-4" />
+              <span>ADD DELIVERY PARTNER</span>
+            </button>
+          </div>
+
+          {/* Delivery Partner Status Metrics */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+            <div className="p-4 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)] space-y-1">
+              <div className="text-[11px] font-semibold text-[var(--text-secondary)]">Total Registered</div>
+              <div className="font-mono-tabular text-2xl font-bold text-[var(--text-primary)]">
+                {deliveryPartners.length}
+              </div>
+              <div className="text-[10px] text-[var(--text-muted)]">Active Directory</div>
+            </div>
+
+            <div className="p-4 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)] space-y-1">
+              <div className="text-[11px] font-semibold text-[var(--text-secondary)]">Online Partners</div>
+              <div className="font-mono-tabular text-2xl font-bold text-emerald-600">
+                {onlinePartnersCount}
+              </div>
+              <div className="text-[10px] text-emerald-600 font-semibold">Ready for Assignment</div>
+            </div>
+
+            <div className="p-4 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)] space-y-1">
+              <div className="text-[11px] font-semibold text-[var(--text-secondary)]">Currently Delivering</div>
+              <div className="font-mono-tabular text-2xl font-bold text-blue-600">
+                {currentlyDeliveringCount}
+              </div>
+              <div className="text-[10px] text-blue-600 font-semibold">On-route Deliveries</div>
+            </div>
+
+            <div className="p-4 rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)] space-y-1">
+              <div className="text-[11px] font-semibold text-[var(--text-secondary)]">Offline Partners</div>
+              <div className="font-mono-tabular text-2xl font-bold text-[var(--text-muted)]">
+                {deliveryPartners.filter((p) => p.status === 'OFFLINE').length}
+              </div>
+              <div className="text-[10px] text-[var(--text-muted)]">Off-duty</div>
+            </div>
+          </div>
+
+          {/* Partner Status Filters */}
+          <div className="flex items-center gap-2 overflow-x-auto pb-1">
+            {[
+              { id: 'ALL' as const, label: `All Partners (${deliveryPartners.length})` },
+              {
+                id: 'PENDING' as const,
+                label: `Pending Review (${pendingPartnersCount})`,
+                isAlert: pendingPartnersCount > 0,
+              },
+              {
+                id: 'APPROVED' as const,
+                label: `Approved (${deliveryPartners.filter((p) => p.approvalStatus === 'APPROVED').length})`,
+              },
+              {
+                id: 'REJECTED' as const,
+                label: `Rejected (${deliveryPartners.filter((p) => p.approvalStatus === 'REJECTED').length})`,
+              },
+              {
+                id: 'SUSPENDED' as const,
+                label: `Suspended (${deliveryPartners.filter((p) => p.approvalStatus === 'SUSPENDED').length})`,
+              },
+            ].map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                onClick={() => setPartnerFilter(f.id)}
+                className={`min-h-[38px] px-3.5 py-1.5 rounded-2xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                  partnerFilter === f.id
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : f.isAlert
+                      ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30'
+                      : 'bg-[var(--bg-card)] border border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                }`}
+              >
+                <span>{f.label}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Filtered Partner Cards List */}
+          {(() => {
+            const filteredPartners = deliveryPartners.filter((p) => {
+              if (partnerFilter === 'ALL') return true;
+              return p.approvalStatus === partnerFilter;
+            });
+
+            if (filteredPartners.length === 0) {
+              return (
+                <div className="rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)] p-12 text-center space-y-2">
+                  <Truck className="w-8 h-8 text-[var(--accent-primary)] mx-auto" />
+                  <p className="font-display text-xl font-bold text-[var(--text-primary)]">
+                    No Partners in &ldquo;{partnerFilter}&rdquo;
+                  </p>
+                  <p className="text-xs text-[var(--text-secondary)]">
+                    Use the filters above or click &ldquo;Add Delivery Partner&rdquo; to register new partners.
+                  </p>
+                </div>
+              );
+            }
+
+            return (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {filteredPartners.map((partner) => {
+                  const isOnline = partner.status === 'ONLINE';
+                  const isDelivering = partner.status === 'CURRENTLY_DELIVERING';
+                  const isPending = partner.approvalStatus === 'PENDING';
+                  const isApproved = partner.approvalStatus === 'APPROVED';
+                  const isRejected = partner.approvalStatus === 'REJECTED';
+                  const isSuspended = partner.approvalStatus === 'SUSPENDED';
+
+                  return (
+                    <div
+                      key={partner.partnerId}
+                      className={`rounded-3xl bg-[var(--bg-card)] border p-5 space-y-4 shadow-2xs flex flex-col justify-between transition-all ${
+                        isPending ? 'border-amber-500/50 ring-1 ring-amber-500/20' : 'border-[var(--border-subtle)]'
+                      }`}
+                    >
+                      <div className="space-y-3">
+                        {/* Top ID & Statuses */}
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono-tabular text-xs font-bold px-2 py-0.5 rounded-lg bg-[var(--bg-secondary)] text-[var(--text-primary)]">
+                              #{partner.serialNumber || '—'}
+                            </span>
+                            <span className="font-mono-tabular text-xs font-bold text-blue-600">
+                              {partner.partnerId}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            <span
+                              className={`px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider ${
+                                isApproved
+                                  ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                                  : isPending
+                                    ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300'
+                                    : isRejected
+                                      ? 'bg-red-500/15 text-red-600 dark:text-red-400'
+                                      : 'bg-stone-500/15 text-[var(--text-muted)]'
+                              }`}
+                            >
+                              {partner.approvalStatus || 'PENDING'}
+                            </span>
+
+                            <span
+                              className={`px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider ${
+                                isOnline
+                                  ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                                  : isDelivering
+                                    ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400'
+                                    : 'bg-stone-500/15 text-[var(--text-muted)]'
+                              }`}
+                            >
+                              {partner.status}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Partner Avatar & Info */}
+                        <div className="flex items-start gap-3">
+                          <div className="w-12 h-12 rounded-2xl overflow-hidden bg-[var(--bg-secondary)] border border-[var(--border-subtle)] shrink-0 flex items-center justify-center">
+                            {partner.profilePhoto ? (
+                              <img
+                                src={partner.profilePhoto}
+                                alt={partner.name}
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <Truck className="w-6 h-6 text-blue-600" />
+                            )}
+                          </div>
+
+                          <div className="truncate">
+                            <h3 className="font-display text-base font-bold text-[var(--text-primary)] truncate">
+                              {partner.name}
+                            </h3>
+                            <div className="text-xs text-[var(--text-secondary)] flex items-center gap-1.5 mt-0.5">
+                              <Phone className="w-3.5 h-3.5 text-[var(--accent-primary)]" />
+                              <a
+                                href={`tel:${partner.contactNumber}`}
+                                className="font-mono-tabular hover:underline font-semibold"
+                              >
+                                +91 {partner.contactNumber}
+                              </a>
+                            </div>
+                            <div className="text-[11px] text-[var(--text-muted)] mt-0.5 truncate">
+                              {partner.vehicleType} · {partner.vehicleNumber || 'No reg number'}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Details pill */}
+                        <div className="p-3 rounded-2xl bg-[var(--bg-primary)] border border-[var(--border-subtle)] space-y-1 text-xs">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[var(--text-muted)]">UPI ID:</span>
+                            <span className="font-mono-tabular font-bold text-[var(--text-primary)] truncate max-w-[180px]">
+                              {partner.upiId}
+                            </span>
+                          </div>
+                          {partner.serviceArea && (
+                            <div className="flex items-center justify-between pt-1 border-t border-[var(--border-subtle)]">
+                              <span className="text-[var(--text-muted)]">Area:</span>
+                              <span className="font-semibold text-[var(--text-primary)] truncate max-w-[180px]">
+                                {partner.serviceArea}
+                              </span>
+                            </div>
+                          )}
+                          {partner.currentActiveOrderId && (
+                            <div className="flex items-center justify-between pt-1 border-t border-[var(--border-subtle)]">
+                              <span className="text-[var(--text-muted)]">Active Order:</span>
+                              <span className="font-mono-tabular font-bold text-blue-600">
+                                {partner.currentActiveOrderId}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Actions */}
+                      <div className="pt-3 border-t border-[var(--border-subtle)] space-y-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setReviewingPartner(partner);
+                            setPartnerRejectionReason(partner.rejectionReason || '');
+                          }}
+                          className={`w-full min-h-[38px] px-3 py-1.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-xs ${
+                            isPending
+                              ? 'bg-amber-500 hover:bg-amber-600 text-white animate-pulse'
+                              : 'bg-blue-600 hover:bg-blue-700 text-white'
+                          }`}
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>{isPending ? 'Review Documents & Decide' : 'View Profile & Documents'}</span>
+                        </button>
+
+                        <div className="flex items-center justify-between pt-1">
+                          <div className="flex items-center gap-1.5">
+                            {isOnline ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  deliveryService.updatePartnerStatus(partner.partnerId, 'OFFLINE');
+                                  refreshDeliveryData();
+                                  notify(`${partner.name} marked OFFLINE.`);
+                                }}
+                                className="px-2.5 py-1 rounded-xl bg-stone-500/10 hover:bg-stone-500/20 text-[11px] font-bold text-[var(--text-secondary)]"
+                              >
+                                Set Offline
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (partner.approvalStatus !== 'APPROVED') {
+                                    alert('Cannot set Online. Partner account must be APPROVED first.');
+                                    return;
+                                  }
+                                  deliveryService.updatePartnerStatus(partner.partnerId, 'ONLINE');
+                                  refreshDeliveryData();
+                                  notify(`${partner.name} marked ONLINE.`);
+                                }}
+                                className="px-2.5 py-1 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-[11px] font-bold text-emerald-700 dark:text-emerald-300"
+                              >
+                                Set Online
+                              </button>
+                            )}
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (window.confirm(`Remove delivery partner ${partner.name}?`)) {
+                                deliveryService.deleteDeliveryPartner(partner.partnerId);
+                                refreshDeliveryData();
+                                notify(`Removed ${partner.name} from directory.`);
+                              }
+                            }}
+                            className="p-1.5 rounded-xl hover:bg-red-500/10 text-[var(--status-danger)]"
+                            title="Delete Partner"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* TAB: CANCELLATIONS — Forceful & Emergency Cancellation Approval Interface */}
+      {activeTab === 'CANCELLATIONS' && (
+        <div className="space-y-6">
+          <div className="rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)] p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xs">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-red-600 text-white flex items-center justify-center shrink-0">
+                <RotateCcw className="w-6 h-6" />
+              </div>
+              <div>
+                <h2 className="font-display text-2xl font-bold text-[var(--text-primary)]">
+                  Forceful Cancellation Requests ({cancellationRequests.length})
+                </h2>
+                <p className="text-xs text-[var(--text-secondary)] mt-0.5">
+                  Review customer cancellation requests, release reserved inventory stock, and update booking status.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setCancellationFilter('PENDING')}
+                className={`min-h-[38px] px-3.5 py-1.5 rounded-xl text-xs font-bold transition-colors ${
+                  cancellationFilter === 'PENDING'
+                    ? 'bg-red-600 text-white'
+                    : 'bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                }`}
+              >
+                Pending Review ({pendingCancellationsCount})
+              </button>
+              <button
+                type="button"
+                onClick={() => setCancellationFilter('ALL')}
+                className={`min-h-[38px] px-3.5 py-1.5 rounded-xl text-xs font-bold transition-colors ${
+                  cancellationFilter === 'ALL'
+                    ? 'bg-red-600 text-white'
+                    : 'bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                }`}
+              >
+                All Requests ({cancellationRequests.length})
+              </button>
+            </div>
+          </div>
+
+          {(() => {
+            const displayedRequests =
+              cancellationFilter === 'PENDING'
+                ? cancellationRequests.filter((r) => r.status === 'PENDING')
+                : cancellationRequests;
+
+            if (displayedRequests.length === 0) {
+              return (
+                <div className="rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)] p-12 text-center space-y-2">
+                  <CheckCircle2 className="w-8 h-8 text-emerald-600 mx-auto" />
+                  <p className="font-display text-xl font-bold text-[var(--text-primary)]">
+                    No {cancellationFilter === 'PENDING' ? 'Pending ' : ''}Cancellation Requests
+                  </p>
+                  <p className="text-xs text-[var(--text-secondary)]">
+                    All customer booking cancellation requests are processed.
+                  </p>
+                </div>
+              );
+            }
+
+            return (
+              <div className="grid grid-cols-1 gap-4">
+                {displayedRequests.map((req) => {
+                  const isPending = req.status === 'PENDING';
+                  const isApproved = req.status === 'APPROVED';
+                  const isRejected = req.status === 'REJECTED';
+
+                  return (
+                    <div
+                      key={req.requestId}
+                      className="rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)] p-5 space-y-4 shadow-2xs text-xs"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border-subtle)] pb-2.5">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono-tabular text-sm font-bold text-[var(--status-danger)]">
+                            {req.requestId}
+                          </span>
+                          <span className="text-[var(--text-muted)]">·</span>
+                          <span className="font-mono-tabular font-semibold text-[var(--text-primary)]">
+                            Order: {req.orderId}
+                          </span>
+                        </div>
+
+                        <span
+                          className={`px-3 py-1 rounded-xl font-bold text-[11px] uppercase ${
+                            isPending
+                              ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+                              : isApproved
+                                ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                                : 'bg-red-500/15 text-[var(--status-danger)]'
+                          }`}
+                        >
+                          {isPending
+                            ? 'PENDING ADMIN REVIEW'
+                            : isApproved
+                              ? 'CANCELLATION APPROVED'
+                              : 'CANCELLATION REJECTED'}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div>
+                          <div className="text-[var(--text-muted)]">Shop Name</div>
+                          <div className="font-bold text-[var(--text-primary)]">{req.shopName}</div>
+                          {req.partnerName && req.partnerName !== 'Unassigned' && (
+                            <div className="text-[var(--text-secondary)] mt-0.5">
+                              Partner: {req.partnerName}
+                            </div>
+                          )}
+                        </div>
+
+                        <div>
+                          <div className="text-[var(--text-muted)]">Customer Reason</div>
+                          <div className="font-bold text-[var(--status-danger)]">{req.reason}</div>
+                          {req.customReason && (
+                            <div className="text-[var(--text-secondary)] mt-0.5 italic">
+                              &ldquo;{req.customReason}&rdquo;
+                            </div>
+                          )}
+                        </div>
+
+                        <div>
+                          <div className="text-[var(--text-muted)]">Request Time</div>
+                          <div className="font-mono-tabular text-[var(--text-primary)] font-semibold">
+                            {new Date(req.requestTime).toLocaleString('en-IN')}
+                          </div>
+                          {req.reviewedAt && (
+                            <div className="font-mono-tabular text-[11px] text-[var(--text-muted)] mt-0.5">
+                              Reviewed: {new Date(req.reviewedAt).toLocaleString('en-IN')}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {req.adminNotes && (
+                        <div className="p-3 rounded-2xl bg-[var(--bg-primary)] border border-[var(--border-subtle)] text-[11px] text-[var(--text-secondary)]">
+                          <strong>Admin Note: </strong> {req.adminNotes}
+                        </div>
+                      )}
+
+                      {isPending && (
+                        <div className="pt-3 border-t border-[var(--border-subtle)] flex flex-wrap items-center justify-end gap-2.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const notes = window.prompt('Optional rejection reason / note to customer:');
+                              deliveryService.reviewForcefulCancellation({
+                                requestId: req.requestId,
+                                decision: 'REJECTED',
+                                adminUid: session.adminUid,
+                                adminNotes: notes || undefined,
+                              });
+                              refreshDeliveryData();
+                              notify(`Cancellation request ${req.requestId} rejected.`);
+                            }}
+                            className="min-h-[38px] px-4 py-2 rounded-xl bg-stone-500/10 hover:bg-stone-500/20 text-[var(--text-primary)] text-xs font-bold transition-colors"
+                          >
+                            REJECT REQUEST
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (
+                                window.confirm(
+                                  `Approve cancellation for order ${req.orderId}? This will mark the order CANCELLED and restore product inventory.`
+                                )
+                              ) {
+                                deliveryService.reviewForcefulCancellation({
+                                  requestId: req.requestId,
+                                  decision: 'APPROVED',
+                                  adminUid: session.adminUid,
+                                  adminNotes: 'Approved by admin — stock restored.',
+                                });
+                                onRefreshData();
+                                refreshDeliveryData();
+                                notify(`Cancellation approved for ${req.orderId}. Inventory restored.`);
+                              }
+                            }}
+                            className="min-h-[38px] px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold transition-colors shadow-xs"
+                          >
+                            APPROVE CANCELLATION & RESTORE STOCK
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -1695,6 +2401,31 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                   onChange={(e) => setCfgUpiId(e.target.value)}
                   className="w-full min-h-[46px] px-4 py-2 rounded-2xl bg-[var(--bg-primary)] border border-[var(--border-subtle)] font-mono-tabular text-xs text-[var(--text-primary)]"
                 />
+              </div>
+
+              {/* UPI Security & Dynamic QR Verification Box */}
+              <div className="p-4 rounded-2xl bg-[var(--bg-primary)] border border-[var(--border-subtle)] flex flex-col sm:flex-row items-center gap-4 text-xs">
+                <div className="p-2.5 rounded-xl bg-white shadow-xs shrink-0">
+                  <QRCodeCanvas
+                    value={paymentService.generateDynamicUpiUri(75, cfgUpiId)}
+                    size={110}
+                    level="M"
+                  />
+                </div>
+                <div className="space-y-1.5 flex-1">
+                  <div className="flex items-center gap-2">
+                    <QrCode className="w-4 h-4 text-[var(--accent-primary)]" />
+                    <span className="font-bold text-[var(--text-primary)]">
+                      UPI Security &amp; Dynamic QR Preview
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-[var(--text-secondary)]">
+                    This dynamic QR code encodes the verified payment URI. Customers scan this QR or tap deep links to pay advance booking fees.
+                  </p>
+                  <div className="font-mono-tabular text-[10px] text-[var(--text-muted)] bg-[var(--bg-secondary)] px-2.5 py-1 rounded-lg">
+                    Destination: {cfgUpiId || 'utkarsh1614@ybl'} · Receiver: Desi Wardrobe
+                  </div>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -2051,6 +2782,539 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                     </div>
                   ))}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Delivery Partner Modal */}
+      {showAddPartnerModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4">
+          <div className="w-full max-w-md rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)] p-6 space-y-5 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0">
+                  <Truck className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-display text-xl font-bold text-[var(--text-primary)]">
+                    Add Delivery Partner
+                  </h3>
+                  <p className="text-[11px] text-[var(--text-secondary)]">
+                    Register a delivery rider for order fulfillment.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAddPartnerModal(false)}
+                className="w-8 h-8 rounded-xl bg-[var(--bg-secondary)] flex items-center justify-center"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                setIsSubmittingPartner(true);
+                try {
+                  const partner = deliveryService.registerDeliveryPartner({
+                    name: newPartnerName,
+                    contactNumber: newPartnerMobile,
+                    upiId: newPartnerUpi,
+                    status: newPartnerStatus,
+                  });
+                  refreshDeliveryData();
+                  notify(`Delivery partner ${partner.name} (${partner.partnerId}) registered.`);
+                  setShowAddPartnerModal(false);
+                  setNewPartnerName('');
+                  setNewPartnerMobile('');
+                  setNewPartnerUpi('');
+                  setNewPartnerStatus('ONLINE');
+                } catch (err) {
+                  setErrorMsg(
+                    err instanceof Error ? err.message : 'Failed to register delivery partner.'
+                  );
+                } finally {
+                  setIsSubmittingPartner(false);
+                }
+              }}
+              className="space-y-4 text-xs"
+            >
+              <div>
+                <label className="block font-semibold text-[var(--text-primary)] mb-1">
+                  Full Name *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Rajesh Kumar"
+                  value={newPartnerName}
+                  onChange={(e) => setNewPartnerName(e.target.value)}
+                  className="w-full min-h-[44px] px-3.5 py-2 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-subtle)] text-[var(--text-primary)]"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-[var(--text-primary)] mb-1">
+                  Contact Number (10 digits) *
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-mono-tabular text-[var(--text-muted)]">
+                    +91
+                  </span>
+                  <input
+                    type="tel"
+                    required
+                    maxLength={10}
+                    placeholder="9876543210"
+                    value={newPartnerMobile}
+                    onChange={(e) => setNewPartnerMobile(e.target.value.replace(/\D/g, ''))}
+                    className="w-full min-h-[44px] pl-12 pr-3.5 py-2 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-subtle)] font-mono-tabular text-[var(--text-primary)]"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-[var(--text-primary)] mb-1">
+                  UPI ID for Payouts *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. rajesh@okaxis"
+                  value={newPartnerUpi}
+                  onChange={(e) => setNewPartnerUpi(e.target.value)}
+                  className="w-full min-h-[44px] px-3.5 py-2 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-subtle)] font-mono-tabular text-[var(--text-primary)]"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-[var(--text-primary)] mb-1">
+                  Initial Status
+                </label>
+                <select
+                  value={newPartnerStatus}
+                  onChange={(e) => setNewPartnerStatus(e.target.value as DeliveryPartnerStatus)}
+                  className="w-full min-h-[44px] px-3 py-2 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-subtle)] text-[var(--text-primary)]"
+                >
+                  <option value="ONLINE">ONLINE (Ready for assignments)</option>
+                  <option value="OFFLINE">OFFLINE (Off duty)</option>
+                </select>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-[var(--border-subtle)]">
+                <button
+                  type="button"
+                  onClick={() => setShowAddPartnerModal(false)}
+                  className="min-h-[40px] px-4 py-2 rounded-xl bg-[var(--bg-secondary)] font-bold text-[var(--text-primary)]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingPartner}
+                  className="min-h-[40px] px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold transition-colors"
+                >
+                  {isSubmittingPartner ? 'Registering...' : 'Register Partner'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Manual Delivery Assignment Modal */}
+      {assigningBooking && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4">
+          <div className="w-full max-w-md rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)] p-6 space-y-5 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0">
+                  <Truck className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-display text-xl font-bold text-[var(--text-primary)]">
+                    Assign Delivery Partner
+                  </h3>
+                  <p className="text-[11px] text-[var(--text-secondary)]">
+                    Order {assigningBooking.bookingId}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAssigningBooking(null)}
+                className="w-8 h-8 rounded-xl bg-[var(--bg-secondary)] flex items-center justify-center"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-[var(--bg-primary)] border border-[var(--border-subtle)] space-y-1.5 text-xs">
+              <div>
+                <span className="text-[var(--text-muted)]">Customer: </span>
+                <strong className="text-[var(--text-primary)]">{assigningBooking.customerName}</strong> · +91 {assigningBooking.customerMobile}
+              </div>
+              <div>
+                <span className="text-[var(--text-muted)]">Shop: </span>
+                <strong className="text-[var(--text-primary)]">{assigningBooking.shopName}</strong>
+              </div>
+              <div>
+                <span className="text-[var(--text-muted)]">Product: </span>
+                <strong className="text-[var(--text-primary)]">{assigningBooking.productName}</strong> (Qty {assigningBooking.quantity})
+              </div>
+            </div>
+
+            <div className="space-y-2 text-xs">
+              <label className="block font-semibold text-[var(--text-primary)]">
+                Select Available Delivery Partner:
+              </label>
+
+              {deliveryPartners.length === 0 ? (
+                <div className="p-4 rounded-xl bg-[var(--bg-primary)] text-center text-xs text-[var(--text-secondary)]">
+                  No delivery partners available. Register one in Delivery Partners tab.
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                  {deliveryPartners.map((dp) => {
+                    const isSelected = selectedPartnerIdForAssign === dp.partnerId;
+                    const isOnline = dp.status === 'ONLINE';
+
+                    return (
+                      <button
+                        key={dp.partnerId}
+                        type="button"
+                        onClick={() => setSelectedPartnerIdForAssign(dp.partnerId)}
+                        className={`w-full p-3 rounded-2xl border text-left flex items-center justify-between transition-all ${
+                          isSelected
+                            ? 'border-blue-600 bg-blue-500/10 ring-1 ring-blue-600'
+                            : 'border-[var(--border-subtle)] bg-[var(--bg-primary)] hover:border-blue-500/50'
+                        }`}
+                      >
+                        <div>
+                          <div className="font-bold text-[var(--text-primary)] flex items-center gap-2">
+                            <span>{dp.name}</span>
+                            <span className="text-[10px] font-mono-tabular px-1.5 py-0.5 rounded bg-[var(--bg-secondary)]">
+                              {dp.partnerId}
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-[var(--text-secondary)] mt-0.5">
+                            +91 {dp.contactNumber}
+                          </div>
+                        </div>
+
+                        <span
+                          className={`px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase ${
+                            isOnline
+                              ? 'bg-emerald-500/15 text-emerald-600'
+                              : dp.status === 'CURRENTLY_DELIVERING'
+                                ? 'bg-blue-500/15 text-blue-600'
+                                : 'bg-stone-500/15 text-[var(--text-muted)]'
+                          }`}
+                        >
+                          {dp.status}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[var(--border-subtle)] text-xs">
+              <button
+                type="button"
+                onClick={() => setAssigningBooking(null)}
+                className="min-h-[40px] px-4 py-2 rounded-xl bg-[var(--bg-secondary)] font-bold text-[var(--text-primary)]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!selectedPartnerIdForAssign}
+                onClick={() => {
+                  if (!assigningBooking || !selectedPartnerIdForAssign) return;
+                  try {
+                    const { partner } = deliveryService.assignPartnerToOrder({
+                      bookingId: assigningBooking.bookingId,
+                      partnerId: selectedPartnerIdForAssign,
+                      adminUid: session.adminUid,
+                    });
+                    onRefreshData();
+                    refreshDeliveryData();
+                    notify(`Assigned ${partner.name} to order ${assigningBooking.bookingId}.`);
+                    setAssigningBooking(null);
+                    setSelectedPartnerIdForAssign('');
+                  } catch (err) {
+                    setErrorMsg(
+                      err instanceof Error ? err.message : 'Failed to assign delivery partner.'
+                    );
+                  }
+                }}
+                className="min-h-[40px] px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold transition-colors"
+              >
+                Confirm Assignment
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Review Documents & Approval Modal */}
+      {reviewingPartner && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xs p-4">
+          <div className="w-full max-w-2xl max-h-[90vh] rounded-3xl bg-[var(--bg-card)] border border-[var(--border-subtle)] p-6 space-y-5 shadow-2xl flex flex-col overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-blue-600 text-white flex items-center justify-center shrink-0">
+                  <Truck className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-display text-lg font-bold text-[var(--text-primary)]">
+                    {reviewingPartner.name}
+                  </h3>
+                  <div className="text-xs text-[var(--text-secondary)] flex items-center gap-2">
+                    <span className="font-mono-tabular font-bold text-blue-600">
+                      {reviewingPartner.partnerId}
+                    </span>
+                    <span>•</span>
+                    <span className="font-mono-tabular">
+                      Registered: {new Date(reviewingPartner.createdAt).toLocaleDateString()}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setReviewingPartner(null)}
+                className="w-8 h-8 rounded-xl bg-[var(--bg-secondary)] flex items-center justify-center"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Scrollable Body */}
+            <div className="flex-1 overflow-y-auto space-y-4 pr-1 text-xs">
+              {/* Partner Details Table */}
+              <div className="p-4 rounded-2xl bg-[var(--bg-primary)] border border-[var(--border-subtle)] space-y-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <span className="text-[var(--text-muted)]">Mobile:</span>
+                    <p className="font-mono-tabular font-bold text-[var(--text-primary)]">
+                      +91 {reviewingPartner.contactNumber}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-[var(--text-muted)]">Vehicle:</span>
+                    <p className="font-bold text-[var(--text-primary)]">
+                      {reviewingPartner.vehicleType} ({reviewingPartner.vehicleNumber || 'Unspecified'})
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-[var(--text-muted)]">Service Area:</span>
+                    <p className="font-bold text-[var(--text-primary)]">
+                      {reviewingPartner.serviceArea || 'Not specified'}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-[var(--text-muted)]">Payout UPI:</span>
+                    <p className="font-mono-tabular font-bold text-emerald-600">
+                      {reviewingPartner.upiId}
+                    </p>
+                  </div>
+                </div>
+                {reviewingPartner.residentialAddress && (
+                  <div className="pt-2 border-t border-[var(--border-subtle)]">
+                    <span className="text-[var(--text-muted)]">Residential Address:</span>
+                    <p className="font-medium text-[var(--text-primary)]">
+                      {reviewingPartner.residentialAddress}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Photos & Identity Documents Grid */}
+              <div className="space-y-3">
+                <h4 className="font-display text-xs font-bold text-[var(--text-primary)] uppercase tracking-wider">
+                  Submitted Verification Documents
+                </h4>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {/* Profile Photo */}
+                  <div className="p-3 rounded-2xl bg-[var(--bg-primary)] border border-[var(--border-subtle)] space-y-2 text-center">
+                    <span className="font-bold text-[11px] text-[var(--text-primary)]">
+                      Profile Photo (Camera)
+                    </span>
+                    <div className="w-full h-36 rounded-xl overflow-hidden bg-black/10 flex items-center justify-center">
+                      {reviewingPartner.profilePhoto ? (
+                        <img
+                          src={reviewingPartner.profilePhoto}
+                          alt="Profile"
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <span className="text-[10px] text-[var(--text-muted)]">No photo</span>
+                      )}
+                    </div>
+                    <span className="text-[10px] font-bold text-amber-600">
+                      Annual Lock Enforced
+                    </span>
+                  </div>
+
+                  {/* Aadhaar Card Front & Back */}
+                  <div className="p-3 rounded-2xl bg-[var(--bg-primary)] border border-[var(--border-subtle)] space-y-2 text-center">
+                    <span className="font-bold text-[11px] text-[var(--text-primary)]">
+                      Aadhaar Card
+                    </span>
+                    <div className="grid grid-cols-2 gap-1.5 h-36">
+                      <div className="rounded-xl overflow-hidden bg-black/10 flex items-center justify-center">
+                        {reviewingPartner.aadhaarFrontDoc ? (
+                          <img
+                            src={reviewingPartner.aadhaarFrontDoc}
+                            alt="Aadhaar Front"
+                            className="w-full h-full object-cover cursor-pointer hover:opacity-90"
+                            onClick={() => window.open(reviewingPartner.aadhaarFrontDoc, '_blank')}
+                          />
+                        ) : (
+                          <span className="text-[9px] text-[var(--text-muted)]">Front</span>
+                        )}
+                      </div>
+                      <div className="rounded-xl overflow-hidden bg-black/10 flex items-center justify-center">
+                        {reviewingPartner.aadhaarBackDoc ? (
+                          <img
+                            src={reviewingPartner.aadhaarBackDoc}
+                            alt="Aadhaar Back"
+                            className="w-full h-full object-cover cursor-pointer hover:opacity-90"
+                            onClick={() => window.open(reviewingPartner.aadhaarBackDoc, '_blank')}
+                          />
+                        ) : (
+                          <span className="text-[9px] text-[var(--text-muted)]">Back</span>
+                        )}
+                      </div>
+                    </div>
+                    <span className="text-[10px] text-[var(--text-muted)]">Click image to enlarge</span>
+                  </div>
+
+                  {/* Driving Licence Front & Back */}
+                  <div className="p-3 rounded-2xl bg-[var(--bg-primary)] border border-[var(--border-subtle)] space-y-2 text-center">
+                    <span className="font-bold text-[11px] text-[var(--text-primary)]">
+                      Driving Licence
+                    </span>
+                    <div className="grid grid-cols-2 gap-1.5 h-36">
+                      <div className="rounded-xl overflow-hidden bg-black/10 flex items-center justify-center">
+                        {reviewingPartner.drivingLicenceFrontDoc ? (
+                          <img
+                            src={reviewingPartner.drivingLicenceFrontDoc}
+                            alt="DL Front"
+                            className="w-full h-full object-cover cursor-pointer hover:opacity-90"
+                            onClick={() => window.open(reviewingPartner.drivingLicenceFrontDoc, '_blank')}
+                          />
+                        ) : (
+                          <span className="text-[9px] text-[var(--text-muted)]">Front</span>
+                        )}
+                      </div>
+                      <div className="rounded-xl overflow-hidden bg-black/10 flex items-center justify-center">
+                        {reviewingPartner.drivingLicenceBackDoc ? (
+                          <img
+                            src={reviewingPartner.drivingLicenceBackDoc}
+                            alt="DL Back"
+                            className="w-full h-full object-cover cursor-pointer hover:opacity-90"
+                            onClick={() => window.open(reviewingPartner.drivingLicenceBackDoc, '_blank')}
+                          />
+                        ) : (
+                          <span className="text-[9px] text-[var(--text-muted)]">Back</span>
+                        )}
+                      </div>
+                    </div>
+                    <span className="text-[10px] text-[var(--text-muted)]">Click image to enlarge</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Rejection / Note Input */}
+              <div className="space-y-1.5 pt-2">
+                <label className="block font-bold text-[var(--text-primary)]">
+                  Rejection Reason / Admin Notes
+                </label>
+                <input
+                  type="text"
+                  placeholder="Specify reason if rejecting (e.g., Blur Aadhaar, invalid vehicle RC)..."
+                  value={partnerRejectionReason}
+                  onChange={(e) => setPartnerRejectionReason(e.target.value)}
+                  className="w-full min-h-[42px] px-3.5 py-2 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-subtle)] text-[var(--text-primary)]"
+                />
+              </div>
+            </div>
+
+            {/* Actions Bar */}
+            <div className="pt-3 border-t border-[var(--border-subtle)] flex flex-wrap items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setReviewingPartner(null)}
+                className="min-h-[42px] px-4 rounded-xl bg-[var(--bg-secondary)] font-bold text-[var(--text-primary)] text-xs"
+              >
+                Close
+              </button>
+
+              {reviewingPartner.approvalStatus !== 'REJECTED' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!partnerRejectionReason.trim()) {
+                      alert('Please provide a reason for rejecting the application.');
+                      return;
+                    }
+                    deliveryService.updatePartnerApprovalStatus({
+                      partnerId: reviewingPartner.partnerId,
+                      decision: 'REJECTED',
+                      rejectionReason: partnerRejectionReason.trim(),
+                    });
+                    refreshDeliveryData();
+                    notify(`Application for ${reviewingPartner.name} rejected.`);
+                    setReviewingPartner(null);
+                  }}
+                  className="min-h-[42px] px-4 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs transition-colors"
+                >
+                  Reject Application
+                </button>
+              )}
+
+              {reviewingPartner.approvalStatus === 'APPROVED' ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    deliveryService.updatePartnerApprovalStatus({
+                      partnerId: reviewingPartner.partnerId,
+                      decision: 'SUSPENDED',
+                    });
+                    refreshDeliveryData();
+                    notify(`Partner ${reviewingPartner.name} suspended.`);
+                    setReviewingPartner(null);
+                  }}
+                  className="min-h-[42px] px-4 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs transition-colors"
+                >
+                  Suspend Partner
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    deliveryService.updatePartnerApprovalStatus({
+                      partnerId: reviewingPartner.partnerId,
+                      decision: 'APPROVED',
+                    });
+                    refreshDeliveryData();
+                    notify(`Partner ${reviewingPartner.name} approved & verified!`);
+                    setReviewingPartner(null);
+                  }}
+                  className="min-h-[42px] px-5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition-colors shadow-xs"
+                >
+                  Approve Partner & Documents
+                </button>
+              )}
             </div>
           </div>
         </div>

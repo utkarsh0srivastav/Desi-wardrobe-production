@@ -14,6 +14,34 @@ import { storage } from '../utils/storage';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
+// In-memory rate limiting for PIN and security question verification attempts
+const pinAttemptMap = new Map<string, { attempts: number; lockUntilMs: number }>();
+const securityAnswerAttemptMap = new Map<string, { attempts: number; lockUntilMs: number }>();
+
+function checkRateLimit(map: Map<string, { attempts: number; lockUntilMs: number }>, key: string, maxAttempts: number = 5, lockDurationMs: number = 5 * 60 * 1000) {
+  const now = Date.now();
+  const entry = map.get(key);
+  if (entry && entry.lockUntilMs > now) {
+    const remainingSeconds = Math.ceil((entry.lockUntilMs - now) / 1000);
+    throw new Error(`Too many incorrect attempts. Please wait ${remainingSeconds}s before trying again.`);
+  }
+}
+
+function recordFailedAttempt(map: Map<string, { attempts: number; lockUntilMs: number }>, key: string, maxAttempts: number = 5, lockDurationMs: number = 5 * 60 * 1000) {
+  const now = Date.now();
+  const entry = map.get(key) || { attempts: 0, lockUntilMs: 0 };
+  entry.attempts += 1;
+  if (entry.attempts >= maxAttempts) {
+    entry.lockUntilMs = now + lockDurationMs;
+    entry.attempts = 0;
+  }
+  map.set(key, entry);
+}
+
+function clearRateLimit(map: Map<string, { attempts: number; lockUntilMs: number }>, key: string) {
+  map.delete(key);
+}
+
 export function isValidCustomerEmail(rawEmail: string | undefined | null): boolean {
   if (!rawEmail) return false;
   const clean = rawEmail.trim().toLowerCase();
@@ -28,6 +56,9 @@ function sanitizeCustomerForFirestore(customer: Customer): Customer {
     mobile: customer.mobile.slice(0, 15),
     ...(cleanEmail ? { email: cleanEmail } : {}),
     pin: customer.pin.slice(0, 128),
+    ...(customer.securityQuestion ? { securityQuestion: customer.securityQuestion.slice(0, 200) } : {}),
+    ...(customer.securityAnswerHash ? { securityAnswerHash: customer.securityAnswerHash.slice(0, 128) } : {}),
+    ...(customer.savedAddress ? { savedAddress: customer.savedAddress } : {}),
     approvalStatus: customer.approvalStatus || 'APPROVED',
     accountStatus: customer.accountStatus || 'ACTIVE',
     createdAt: customer.createdAt,
@@ -217,18 +248,25 @@ export const customerService = {
   /**
    * Registers a customer account in Firestore with an authoritative registration timestamp.
    */
+  /**
+   * Registers a customer account in Firestore with security question setup and authoritative timestamp.
+   */
   registerCustomerAsync: async (params: {
     name: string;
     mobile: string;
     email: string;
     pin: string;
     confirmPin: string;
+    securityQuestion?: string;
+    securityAnswer?: string;
   }): Promise<Customer> => {
     const cleanName = params.name.trim();
     const cleanMobile = params.mobile.replace(/\D/g, '');
     const cleanEmail = (params.email || '').trim().toLowerCase();
     const cleanPin = params.pin.trim();
     const cleanConfirmPin = params.confirmPin.trim();
+    const cleanQuestion = (params.securityQuestion || '').trim();
+    const cleanAnswer = (params.securityAnswer || '').trim().toLowerCase();
 
     if (!cleanName) {
       throw new Error('Please enter your Full Name.');
@@ -248,8 +286,15 @@ export const customerService = {
     if (cleanPin !== cleanConfirmPin) {
       throw new Error('Create PIN and Confirm PIN do not match.');
     }
+    if (!cleanQuestion) {
+      throw new Error('Please select a Security Question for PIN recovery.');
+    }
+    if (!cleanAnswer || cleanAnswer.length < 2) {
+      throw new Error('Please provide an answer to your Security Question (at least 2 characters).');
+    }
 
     const hashedPin = hashPinSync(cleanPin, cleanMobile);
+    const hashedAnswer = hashPinSync(cleanAnswer, `sec_${cleanMobile}`);
 
     // Check Firestore for an existing customer with this mobile number
     const remoteExisting = await fetchCustomerByMobileFromFirestore(cleanMobile);
@@ -275,6 +320,8 @@ export const customerService = {
       mobile: cleanMobile,
       email: cleanEmail,
       pin: hashedPin,
+      securityQuestion: cleanQuestion,
+      securityAnswerHash: hashedAnswer,
       approvalStatus: 'APPROVED',
       accountStatus: 'ACTIVE',
       createdAt: registrationTimestamp,
@@ -296,6 +343,8 @@ export const customerService = {
     email: string;
     pin: string;
     confirmPin: string;
+    securityQuestion?: string;
+    securityAnswer?: string;
   }): Customer => {
     const cleanName = params.name.trim();
     const cleanMobile = params.mobile.replace(/\D/g, '');
@@ -323,6 +372,10 @@ export const customerService = {
     }
 
     const hashedPin = hashPinSync(cleanPin, cleanMobile);
+    const hashedAnswer = params.securityAnswer
+      ? hashPinSync(params.securityAnswer.trim().toLowerCase(), `sec_${cleanMobile}`)
+      : undefined;
+
     const customers = storage.getCustomers();
     const existing = customers.find((c) => c.mobile === cleanMobile);
 
@@ -344,6 +397,8 @@ export const customerService = {
       mobile: cleanMobile,
       email: cleanEmail,
       pin: hashedPin,
+      securityQuestion: params.securityQuestion,
+      securityAnswerHash: hashedAnswer,
       approvalStatus: 'APPROVED',
       accountStatus: 'ACTIVE',
       createdAt: new Date().toISOString(),
@@ -356,13 +411,111 @@ export const customerService = {
   },
 
   /**
-   * Authenticates a returning Customer by querying only their mobile record in Firestore and verifying their 4-digit PIN.
+   * Retrieves security question for a customer mobile number (without revealing answer or PIN).
+   */
+  getSecurityQuestionForMobileAsync: async (rawMobile: string): Promise<{ customerId: string; mobile: string; securityQuestion: string }> => {
+    const cleanMobile = rawMobile.replace(/\D/g, '');
+    if (!/^[6-9]\d{9}$/.test(cleanMobile)) {
+      throw new Error('Please enter a valid 10-digit Mobile Number.');
+    }
+    checkRateLimit(securityAnswerAttemptMap, cleanMobile);
+
+    const remoteCustomer = await fetchCustomerByMobileFromFirestore(cleanMobile);
+    const localCustomers = storage.getCustomers();
+    const customer = remoteCustomer || localCustomers.find((c) => c.mobile === cleanMobile);
+
+    if (!customer) {
+      throw new Error('No registered customer account found with this mobile number.');
+    }
+    if (!customer.securityQuestion) {
+      throw new Error('No security question was configured for this account. Please contact Admin or login with PIN.');
+    }
+
+    return {
+      customerId: customer.customerId,
+      mobile: customer.mobile,
+      securityQuestion: customer.securityQuestion,
+    };
+  },
+
+  /**
+   * Verifies the answer to the security question and resets the PIN for an existing account.
+   */
+  resetPinWithSecurityAnswerAsync: async (params: {
+    mobile: string;
+    securityAnswer: string;
+    newPin: string;
+    confirmNewPin: string;
+  }): Promise<Customer> => {
+    const cleanMobile = params.mobile.replace(/\D/g, '');
+    const cleanAnswer = params.securityAnswer.trim().toLowerCase();
+    const cleanNewPin = params.newPin.trim();
+    const cleanConfirm = params.confirmNewPin.trim();
+
+    if (!/^[6-9]\d{9}$/.test(cleanMobile)) {
+      throw new Error('Please enter a valid 10-digit Mobile Number.');
+    }
+    checkRateLimit(securityAnswerAttemptMap, cleanMobile);
+
+    if (!cleanAnswer) {
+      throw new Error('Please enter the answer to your Security Question.');
+    }
+    if (!/^\d{4}$/.test(cleanNewPin)) {
+      throw new Error('New PIN must be a 4-digit number.');
+    }
+    if (cleanNewPin !== cleanConfirm) {
+      throw new Error('New PIN and Confirm PIN do not match.');
+    }
+
+    const remoteCustomer = await fetchCustomerByMobileFromFirestore(cleanMobile);
+    const localCustomers = storage.getCustomers();
+    const customer = remoteCustomer || localCustomers.find((c) => c.mobile === cleanMobile);
+
+    if (!customer) {
+      throw new Error('No customer account found with this number.');
+    }
+    if (customer.accountStatus === 'BLOCKED') {
+      throw new Error('Your customer account has been blocked by Admin.');
+    }
+    if (customer.accountStatus === 'REJECTED') {
+      throw new Error('Your customer account was rejected by Admin.');
+    }
+    if (!customer.securityAnswerHash) {
+      throw new Error('No security answer on file. Please contact Admin for assistance.');
+    }
+
+    const hashedInputAnswer = hashPinSync(cleanAnswer, `sec_${cleanMobile}`);
+    if (hashedInputAnswer !== customer.securityAnswerHash) {
+      recordFailedAttempt(securityAnswerAttemptMap, cleanMobile);
+      throw new Error('Incorrect answer to security question. Please try again.');
+    }
+
+    // Success: clear rate limit and update PIN on the EXACT same customerId
+    clearRateLimit(securityAnswerAttemptMap, cleanMobile);
+    clearRateLimit(pinAttemptMap, cleanMobile);
+
+    const newHashedPin = hashPinSync(cleanNewPin, cleanMobile);
+    const updatedCustomer: Customer = {
+      ...customer,
+      pin: newHashedPin,
+    };
+
+    const others = localCustomers.filter((c) => c.customerId !== customer.customerId);
+    storage.saveCustomers([updatedCustomer, ...others]);
+    storage.setActiveCustomerId(updatedCustomer.customerId);
+    await persistCustomerToFirestore(updatedCustomer, OperationType.UPDATE);
+    return updatedCustomer;
+  },
+
+  /**
+   * Authenticates a returning Customer with rate limiting.
    */
   loginCustomerAsync: async (rawMobile: string, pin: string): Promise<Customer> => {
     const cleanMobile = rawMobile.replace(/\D/g, '');
     if (!/^[6-9]\d{9}$/.test(cleanMobile)) {
       throw new Error('Please enter a valid 10-digit Mobile Number.');
     }
+    checkRateLimit(pinAttemptMap, cleanMobile);
 
     const remoteCustomer = await fetchCustomerByMobileFromFirestore(cleanMobile);
     const localCustomers = storage.getCustomers();
@@ -382,8 +535,11 @@ export const customerService = {
     }
 
     if (!verifyPinSync(pin, customer.pin, cleanMobile)) {
+      recordFailedAttempt(pinAttemptMap, cleanMobile);
       throw new Error('Incorrect PIN. Please enter your 4-digit PIN.');
     }
+
+    clearRateLimit(pinAttemptMap, cleanMobile);
 
     // Clear any previous customer's bookings before activating the new customer session
     storage.saveBookings([]);
@@ -391,6 +547,24 @@ export const customerService = {
     storage.saveCustomers([customer, ...others]);
     storage.setActiveCustomerId(customer.customerId);
     return customer;
+  },
+
+  /**
+   * Updates customer saved address.
+   */
+  saveCustomerAddressAsync: async (customerId: string, address: Customer['savedAddress']): Promise<Customer> => {
+    const localCustomers = storage.getCustomers();
+    const customer = localCustomers.find((c) => c.customerId === customerId);
+    if (!customer) throw new Error('Customer account not found.');
+
+    const updated: Customer = {
+      ...customer,
+      savedAddress: address,
+    };
+    const others = localCustomers.filter((c) => c.customerId !== customerId);
+    storage.saveCustomers([updated, ...others]);
+    await persistCustomerToFirestore(updated, OperationType.UPDATE);
+    return updated;
   },
 
   loginCustomer: (rawMobile: string, pin: string): Customer => {

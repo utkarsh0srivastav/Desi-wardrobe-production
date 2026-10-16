@@ -14,6 +14,8 @@ import { appConfig } from '../config/appConfig';
 import { db, handleFirestoreError, logFirestoreError, OperationType } from '../firebase';
 import {
   Booking,
+  CustomerAddress,
+  DeliveryMode,
   PaymentRecord,
   PaymentUploadStage,
   PendingCheckoutDraft,
@@ -179,6 +181,9 @@ export const paymentService = {
     customerName: string;
     customerMobile: string;
     items: PendingCheckoutItem[];
+    deliveryMode?: DeliveryMode;
+    deliveryAddress?: CustomerAddress;
+    deliveryCharge?: number;
     retryForBookingId?: string;
   }): PendingCheckoutDraft => {
     const cleanName = params.customerName.trim();
@@ -195,7 +200,15 @@ export const paymentService = {
     }
 
     const totalQuantity = params.items.reduce((sum, item) => sum + Math.max(1, item.quantity), 0);
-    const expectedBookingAmount = paymentService.calculateBookingAmount(totalQuantity);
+    const advanceAmount = paymentService.calculateBookingAmount(totalQuantity);
+    const deliveryCharge = params.deliveryCharge || 0;
+    const totalPayableNow = advanceAmount + deliveryCharge;
+    const totalProductPrice = params.items.reduce(
+      (sum, item) => sum + item.unitPrice * Math.max(1, item.quantity),
+      0
+    );
+    const remainingProductAmount = Math.max(0, totalProductPrice - advanceAmount);
+    const expectedBookingAmount = totalPayableNow;
     const upiId = appConfig.getAdminUpiId();
     const upiUri = paymentService.generateDynamicUpiUri(expectedBookingAmount, upiId);
     const bookingReference =
@@ -210,6 +223,12 @@ export const paymentService = {
       items: params.items,
       totalQuantity,
       expectedBookingAmount,
+      advanceAmount,
+      deliveryCharge,
+      deliveryMode: params.deliveryMode || 'TAKEAWAY',
+      deliveryAddress: params.deliveryAddress,
+      totalPayableNow,
+      remainingProductAmount,
       upiId,
       upiUri,
       retryForBookingId: params.retryForBookingId,
@@ -395,6 +414,11 @@ export const paymentService = {
             quantity: item.quantity,
             price: item.unitPrice * item.quantity,
             paymentAmount: item.quantity * perUnitBookingFee,
+            advanceAmount: item.quantity * perUnitBookingFee,
+            remainingAmount: Math.max(0, item.unitPrice * item.quantity - item.quantity * perUnitBookingFee),
+            deliveryMode: draft.deliveryMode || 'TAKEAWAY',
+            ...(draft.deliveryAddress ? { deliveryAddress: draft.deliveryAddress } : {}),
+            ...(draft.deliveryCharge !== undefined ? { deliveryCharge: draft.deliveryCharge } : {}),
             paymentStatus: 'PENDING_VERIFICATION',
             bookingStatus: 'PAYMENT_PENDING',
             status: 'PAYMENT_PENDING',

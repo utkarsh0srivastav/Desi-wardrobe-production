@@ -54,7 +54,9 @@ export function getBookingFirestoreDocId(booking: Booking): string {
 }
 
 export function sanitizeBookingForFirestore(booking: Booking): Booking {
-  const effectiveStatus: BookingStatus = booking.bookingStatus || booking.status || 'CONFIRMED';
+  const rawStatus: BookingStatus = booking.bookingStatus || booking.status || 'CONFIRMED';
+  const firestoreSafeStatus: BookingStatus =
+    rawStatus === 'OUT_FOR_DELIVERY' ? 'CONFIRMED' : rawStatus;
   const clean: Booking = {
     bookingId: booking.bookingId,
     customerId: booking.customerId.slice(0, 128),
@@ -76,11 +78,30 @@ export function sanitizeBookingForFirestore(booking: Booking): Booking {
         ? Math.max(0, Math.round(booking.paymentAmount))
         : booking.quantity * appConfig.getMinBookingAmountPerUnit(),
     paymentStatus: booking.paymentStatus || 'VERIFIED',
-    bookingStatus: effectiveStatus,
-    status: effectiveStatus,
+    bookingStatus: firestoreSafeStatus,
+    status: firestoreSafeStatus,
+    deliveryMode: booking.deliveryMode || 'TAKEAWAY',
     createdAt: booking.createdAt,
     pickupDeadline: booking.pickupDeadline,
   };
+  if (booking.deliveryCharge !== undefined) {
+    clean.deliveryCharge = Math.max(0, Math.round(booking.deliveryCharge));
+  }
+  if (booking.deliveryAddress) {
+    clean.deliveryAddress = booking.deliveryAddress;
+  }
+  if (booking.advanceAmount !== undefined) {
+    clean.advanceAmount = booking.advanceAmount;
+  }
+  if (booking.remainingAmount !== undefined) {
+    clean.remainingAmount = booking.remainingAmount;
+  }
+  if (booking.assignedPartnerId) {
+    clean.assignedPartnerId = booking.assignedPartnerId;
+  }
+  if (booking.assignedPartnerName) {
+    clean.assignedPartnerName = booking.assignedPartnerName;
+  }
   if (booking.bookingReference) {
     clean.bookingReference = booking.bookingReference.slice(0, 128);
   }
@@ -549,4 +570,83 @@ export const bookingService = {
     void persistBookingToFirestore(updated, OperationType.UPDATE);
     return updated;
   },
+
+  verifyAndHandoverBooking: (params: {
+    bookingId: string;
+    enteredCode: string;
+    shopkeeperId: string;
+  }): Booking => {
+    const bookings = storage.getBookings();
+    const index = bookings.findIndex(
+      (b) =>
+        b.bookingId === params.bookingId ||
+        b.bookingReference === params.bookingId ||
+        b.documentId === params.bookingId
+    );
+    if (index === -1) {
+      throw new Error('Order not found.');
+    }
+
+    const current = bookings[index];
+    const currentStatus = current.bookingStatus || current.status;
+    if (currentStatus === 'SOLD') return current;
+    if (
+      currentStatus === 'NOT_SOLD' ||
+      currentStatus === 'CANCELLED' ||
+      currentStatus === 'PAYMENT_REJECTED'
+    ) {
+      throw new Error('Cannot handover a cancelled or not sold order.');
+    }
+    if (currentStatus === 'PAYMENT_PENDING') {
+      throw new Error('Cannot handover order before Admin verifies payment.');
+    }
+
+    const cleanEntered = params.enteredCode.trim().toUpperCase();
+    const customerMobileSuffix = current.customerMobile.slice(-4);
+    const bookingIdSuffix = current.bookingId.slice(-4).toUpperCase();
+    const refSuffix = (current.bookingReference || '').slice(-4).toUpperCase();
+    const expectedPickupCode = (current.pickupCode || '').trim().toUpperCase();
+
+    const isMatch =
+      (expectedPickupCode && cleanEntered === expectedPickupCode) ||
+      cleanEntered === customerMobileSuffix ||
+      cleanEntered === bookingIdSuffix ||
+      cleanEntered === refSuffix;
+
+    if (!isMatch) {
+      throw new Error(
+        `Invalid handover code. Please enter the Customer Pickup Code, the last 4 digits of the customer mobile (${customerMobileSuffix}), or the last 4 characters of the Booking ID.`
+      );
+    }
+
+    const now = new Date().toISOString();
+    if (current.deliveryMode === 'DELIVERY') {
+      const updated: Booking = {
+        ...current,
+        bookingStatus: 'OUT_FOR_DELIVERY',
+        status: 'OUT_FOR_DELIVERY',
+        handoverVerifiedAt: now,
+        handoverShopkeeperId: params.shopkeeperId,
+      };
+      bookings[index] = updated;
+      storage.saveBookings(bookings);
+      void persistBookingToFirestore(updated, OperationType.UPDATE);
+      return updated;
+    } else {
+      // Direct takeaway: mark SOLD
+      inventoryService.confirmSold(current.productId, current.quantity, false);
+      const updated: Booking = {
+        ...current,
+        bookingStatus: 'SOLD',
+        status: 'SOLD',
+        handoverVerifiedAt: now,
+        handoverShopkeeperId: params.shopkeeperId,
+      };
+      bookings[index] = updated;
+      storage.saveBookings(bookings);
+      void persistBookingToFirestore(updated, OperationType.UPDATE);
+      return updated;
+    }
+  },
 };
+

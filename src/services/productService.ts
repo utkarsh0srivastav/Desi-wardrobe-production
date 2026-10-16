@@ -14,7 +14,7 @@ import { shopService } from './shopService';
 
 function sanitizeProductForFirestore(product: Product): Product {
   const cleanQty = Math.max(0, Math.floor(product.quantity));
-  return {
+  const res: Product = {
     productId: product.productId,
     shopId: product.shopId,
     name: product.name.slice(0, 150),
@@ -33,6 +33,19 @@ function sanitizeProductForFirestore(product: Product): Product {
     status: cleanQty > 0 ? 'AVAILABLE' : 'OUT_OF_STOCK',
     createdAt: product.createdAt,
   };
+  if (product.mrp !== undefined) {
+    res.mrp = Math.max(res.price, Math.round(product.mrp));
+  }
+  if (product.discountPercent !== undefined) {
+    res.discountPercent = Math.max(0, Math.min(100, Math.round(product.discountPercent)));
+  }
+  if (product.gender) {
+    res.gender = product.gender;
+  }
+  if (product.productCategory) {
+    res.productCategory = product.productCategory.slice(0, 60);
+  }
+  return res;
 }
 
 export async function persistProductToFirestore(
@@ -95,6 +108,9 @@ export const productService = {
     name: string;
     description: string;
     price: number;
+    mrp?: number;
+    gender?: 'MEN' | 'WOMEN' | 'KIDS' | 'UNISEX';
+    productCategory?: string;
     quantity: number;
     sizes: string[];
     colors: string[];
@@ -125,6 +141,10 @@ export const productService = {
     const inheritedPolicy: PricePolicy =
       params.pricePolicy || shop?.pricePolicy || 'FIXED_PRICE';
     const cleanQty = Math.max(0, Math.floor(params.quantity));
+    const offerPrice = Math.round(params.price);
+    const cleanMrp = params.mrp && params.mrp >= offerPrice ? Math.round(params.mrp) : offerPrice;
+    const discountPercent =
+      cleanMrp > offerPrice ? Math.round(((cleanMrp - offerPrice) / cleanMrp) * 100) : 0;
 
     const newProduct: Product = {
       productId: `prod-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
@@ -133,7 +153,12 @@ export const productService = {
       description: (
         params.description.trim() || 'Available at our local shop on Desi Wardrobe.'
       ).slice(0, 1000),
-      price: Math.round(params.price),
+      price: offerPrice,
+      mrp: cleanMrp,
+      offerPrice,
+      discountPercent,
+      gender: params.gender || 'UNISEX',
+      productCategory: params.productCategory || 'CLOTHING',
       quantity: cleanQty,
       soldCount: 0,
       sizes: params.sizes.slice(0, 20),
@@ -160,6 +185,11 @@ export const productService = {
         | 'name'
         | 'description'
         | 'price'
+        | 'mrp'
+        | 'offerPrice'
+        | 'discountPercent'
+        | 'gender'
+        | 'productCategory'
         | 'quantity'
         | 'sizes'
         | 'colors'
@@ -179,6 +209,15 @@ export const productService = {
       updates.quantity !== undefined
         ? Math.max(0, Math.floor(updates.quantity))
         : current.quantity;
+    const nextPrice = updates.price !== undefined ? Math.round(updates.price) : current.price;
+    const nextMrp =
+      updates.mrp !== undefined
+        ? Math.max(nextPrice, Math.round(updates.mrp))
+        : current.mrp !== undefined
+          ? Math.max(nextPrice, current.mrp)
+          : nextPrice;
+    const nextDiscount =
+      nextMrp > nextPrice ? Math.round(((nextMrp - nextPrice) / nextMrp) * 100) : 0;
 
     const updated: Product = {
       ...current,
@@ -189,7 +228,10 @@ export const productService = {
         updates.description !== undefined
           ? updates.description.trim().slice(0, 1000)
           : current.description,
-      price: updates.price !== undefined ? Math.round(updates.price) : current.price,
+      price: nextPrice,
+      mrp: nextMrp,
+      offerPrice: nextPrice,
+      discountPercent: nextDiscount,
       quantity: nextQty,
       status: nextQty > 0 ? 'AVAILABLE' : 'OUT_OF_STOCK',
     };

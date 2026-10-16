@@ -67,6 +67,22 @@ export function verifyPinSync(
   return storedPinOrHash === cleanEntered;
 }
 
+export function hashSecurityAnswerSync(rawAnswer: string, saltSuffix: string = ''): string {
+  const normalized = rawAnswer.trim().toLowerCase().replace(/\s+/g, ' ');
+  return hashPinSync(normalized, saltSuffix);
+}
+
+export function verifySecurityAnswerSync(
+  enteredAnswer: string,
+  storedHash: string | undefined | null,
+  saltSuffix: string = ''
+): boolean {
+  if (!storedHash) return false;
+  const clean = enteredAnswer.trim().toLowerCase().replace(/\s+/g, ' ');
+  if (!clean) return false;
+  return verifyPinSync(clean, storedHash, saltSuffix);
+}
+
 /**
  * Generates a cryptographically random token for trusted device registration.
  */

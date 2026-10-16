@@ -109,6 +109,9 @@ export function isValidActiveCompletedShop(shop: Shop | null | undefined): shop 
   if (typeof shop.shopName !== 'string' || !shop.shopName.trim()) return false;
   if (shop.shopStatus !== 'ACTIVE') return false;
   if (shop.profileStatus !== 'COMPLETED') return false;
+  if (shop.status === 'CLOSED') return false;
+  if ((shop as any).isOnline === false) return false;
+  if ((shop as any).onlineStatus === 'OFFLINE') return false;
   if (!isValidCoordinate(shop.latitude, shop.longitude)) return false;
   return true;
 }

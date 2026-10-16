@@ -72,6 +72,9 @@ export type BookingStatus =
   | 'PAYMENT_REJECTED'
   | 'CONFIRMED'
   | 'BOOKED'
+  | 'READY_FOR_DELIVERY'
+  | 'OUT_FOR_DELIVERY'
+  | 'DELIVERED'
   | 'SOLD'
   | 'NOT_SOLD'
   | 'EXPIRED'
@@ -81,7 +84,7 @@ export type ProductStatus = 'AVAILABLE' | 'OUT_OF_STOCK';
 
 export type ThemeMode = 'light' | 'dark';
 
-export type AppEntryMode = 'CUSTOMER' | 'SHOPKEEPER' | 'ADMIN';
+export type AppEntryMode = 'CUSTOMER' | 'SHOPKEEPER' | 'ADMIN' | 'DELIVERY_PARTNER';
 
 export const INDIAN_STATES = [
   'Andhra Pradesh',
@@ -172,6 +175,11 @@ export interface Shop {
   openingTime?: string;
   closingTime?: string;
   status?: 'OPEN' | 'CLOSED';
+  isOnline?: boolean;
+  onlineStatus?: 'ONLINE' | 'OFFLINE';
+  categories?: string[];
+  shopkeeperUpiId?: string; // Shopkeeper's UPI for final product payment
+  supportedDeliveryModes?: DeliveryMode[];
   isSponsored?: boolean;
   sponsorStatus?: SponsorStatus;
   sponsorPlan?: string;
@@ -256,17 +264,31 @@ export interface Shopkeeper {
   approvalStatus: ShopkeeperApprovalStatus;
   pinCreated: boolean;
   profileStatus: ProfileStatus;
+  securityQuestion?: string;
+  securityAnswerHash?: string;
+  failedPinAttempts?: number;
+  pinLockedUntil?: string;
+  upiId?: string;
   createdAt: string;
   verifiedAt?: string;
   approvedAt?: string;
 }
+
+export type ProductGender = 'MEN' | 'WOMEN' | 'KIDS' | 'UNISEX';
+
+export type ProductMainCategory = 'CLOTHING' | 'FOOTWEAR' | 'ACCESSORIES' | string;
 
 export interface Product {
   productId: string;
   shopId: string;
   name: string;
   description: string;
-  price: number;
+  price: number; // Offer Price
+  mrp?: number; // Maximum Retail Price (optional, defaults to price)
+  offerPrice?: number; // Alias for price
+  discountPercent?: number;
+  gender?: ProductGender;
+  productCategory?: ProductMainCategory;
   quantity: number;
   soldCount?: number;
   sizes: string[];
@@ -278,15 +300,133 @@ export interface Product {
   createdAt: string;
 }
 
+export const SECURITY_QUESTION_OPTIONS = [
+  'What is the name of your first school?',
+  'What is your favorite traditional Indian dish?',
+  'What city or town were you born in?',
+  'What is your mother’s maiden name?',
+  'What was your first pet’s name?',
+] as const;
+
+export interface CustomerSecurityQuestion {
+  question: string;
+  answerHash: string;
+}
+
+export interface CustomerAddress {
+  addressId: string;
+  street: string;
+  village?: string;
+  post?: string;
+  city: string;
+  district: string;
+  state: string;
+  landmark?: string;
+  pincode?: string;
+  latitude?: number;
+  longitude?: number;
+  isCurrentLocationUsed?: boolean;
+  savedAt: string;
+}
+
 export interface Customer {
   customerId: string;
   name: string;
   mobile: string;
   email?: string;
   pin: string; // Hashed PIN
+  securityQuestion?: string;
+  securityAnswerHash?: string;
+  savedAddress?: CustomerAddress;
   approvalStatus: CustomerStatus;
   accountStatus: CustomerStatus;
   createdAt: string;
+}
+
+export type DeliveryMode = 'DELIVERY' | 'TAKEAWAY';
+
+export type DeliveryPartnerStatus = 'ONLINE' | 'OFFLINE' | 'CURRENTLY_DELIVERING';
+
+export type DeliveryPartnerApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'SUSPENDED';
+
+export type DeliveryPartnerVerificationStatus = 'UNVERIFIED' | 'VERIFIED' | 'REJECTED';
+
+export type VehicleType = 'BIKE' | 'SCOOTER' | 'BICYCLE' | 'CAR' | 'OTHER';
+
+export interface DeliveryPartner {
+  partnerId: string; // Unique permanent ID (e.g., DP-1001)
+  serialNumber?: number;
+  name: string;
+  contactNumber: string;
+  email?: string;
+  residentialAddress?: string;
+  serviceArea?: string;
+  vehicleType?: VehicleType;
+  vehicleNumber?: string;
+  upiId: string;
+  pin?: string; // Hashed PIN
+  securityQuestion?: string;
+  securityAnswerHash?: string;
+  failedPinAttempts?: number;
+  pinLockedUntil?: string;
+  profilePhoto?: string;
+  profilePhotoUploadedAt?: string;
+  profilePhotoLocked?: boolean;
+  aadhaarFrontDoc?: string;
+  aadhaarBackDoc?: string;
+  drivingLicenceFrontDoc?: string;
+  drivingLicenceBackDoc?: string;
+  status: DeliveryPartnerStatus;
+  approvalStatus: DeliveryPartnerApprovalStatus;
+  verificationStatus: DeliveryPartnerVerificationStatus;
+  rejectionReason?: string;
+  currentActiveOrderId?: string;
+  pendingAssignedOrderId?: string;
+  completedDeliveries?: number;
+  totalEarnings?: number;
+  createdAt: string;
+  updatedAt?: string;
+  approvedAt?: string;
+}
+
+export interface DeliveryAssignment {
+  assignmentId: string;
+  orderId: string;
+  bookingReference: string;
+  partnerId: string;
+  partnerName: string;
+  assignedByAdminUid: string;
+  assignedAt: string;
+  status: 'PENDING_PARTNER_ACCEPTANCE' | 'ASSIGNED' | 'QUEUED' | 'COMPLETED' | 'CANCELLED';
+  isEmergencyOverride?: boolean;
+}
+
+export type ForcefulCancellationStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+
+export interface ForcefulCancellationRequest {
+  requestId: string;
+  orderId: string;
+  bookingReference: string;
+  shopId: string;
+  shopName: string;
+  partnerId: string;
+  partnerName: string;
+  requestTime: string;
+  reason: string;
+  customReason?: string;
+  status: ForcefulCancellationStatus;
+  reviewedByAdminUid?: string;
+  reviewedAt?: string;
+  adminNotes?: string;
+}
+
+export interface TemporaryCoordinateRecord {
+  coordinateId: string;
+  customerId?: string;
+  latitude: number;
+  longitude: number;
+  createdAtMs: number;
+  activeOrderIds?: string[]; // If non-empty, retained until order completion/cancellation
 }
 
 export interface CartItem {
@@ -318,7 +458,15 @@ export interface Booking {
   size: string;
   color: string;
   quantity: number;
-  price: number;
+  price: number; // Offer price per unit or total product price
+  advanceAmount?: number; // Advance paid (₹75 per unit)
+  remainingAmount?: number; // Total price - advance paid (paid to Shopkeeper UPI at delivery)
+  deliveryCharge?: number; // Delivery fee paid to Admin (if delivery mode)
+  deliveryMode?: DeliveryMode; // 'DELIVERY' | 'TAKEAWAY'
+  deliveryAddress?: CustomerAddress;
+  shopkeeperUpiId?: string; // Shopkeeper's UPI for final product payment
+  assignedPartnerId?: string;
+  assignedPartnerName?: string;
   paymentAmount?: number;
   paymentStatus?: PaymentVerificationStatus;
   bookingStatus?: BookingStatus;
@@ -328,6 +476,27 @@ export interface Booking {
   approvedAt?: string;
   rejectedAt?: string;
   pickupDeadline: string;
+  pickupCode?: string;
+  pickupCodeExpiresAt?: string;
+  pickupCodeAttempts?: number;
+  pickupCodeLockedUntil?: string;
+  handoverVerifiedAt?: string;
+  handoverShopkeeperId?: string;
+  handoverPartnerId?: string;
+  deliveryCompletedAt?: string;
+  deliveryFailureReason?: string;
+}
+
+export interface ShopkeeperNotification {
+  notificationId: string;
+  shopkeeperId: string;
+  shopId: string;
+  orderId?: string;
+  title: string;
+  message: string;
+  type: 'NEW_ORDER' | 'ORDER_STATUS' | 'PICKUP_REQUEST' | 'HANDOVER_COMPLETED' | 'GENERAL';
+  read: boolean;
+  createdAt: string;
 }
 
 export interface PaymentRecord {
@@ -345,8 +514,12 @@ export interface PaymentRecord {
   size: string;
   color: string;
   quantity: number;
-  expectedAmount: number;
-  upiId: string;
+  expectedAmount: number; // Total advance (₹75/unit) + applicable deliveryCharge
+  advanceAmount?: number; // Product advance breakdown
+  deliveryCharge?: number; // Delivery charge breakdown
+  deliveryMode?: DeliveryMode;
+  deliveryAddress?: CustomerAddress;
+  upiId: string; // Admin's UPI ID for advance + delivery fee
   screenshotStoragePath: string;
   screenshotURL: string;
   screenshotFileName?: string;
@@ -357,7 +530,9 @@ export interface PaymentRecord {
   createdAt?: string;
   verifiedAt?: string;
   approvedAt?: string;
+  approvedByAdminUid?: string;
   rejectedAt?: string;
+  rejectedByAdminUid?: string;
   deletedAt?: string;
   screenshotDeleted?: boolean;
   screenshotDeletedAt?: string;
@@ -396,6 +571,7 @@ export interface PendingCheckoutItem {
   color: string;
   quantity: number;
   unitPrice: number;
+  mrp?: number;
   fromCartItemId?: string;
 }
 
@@ -407,6 +583,12 @@ export interface PendingCheckoutDraft {
   items: PendingCheckoutItem[];
   totalQuantity: number;
   expectedBookingAmount: number;
+  advanceAmount: number; // ₹75 * totalQuantity
+  deliveryCharge: number; // ₹0 for takeaway, calculated for delivery
+  deliveryMode: DeliveryMode;
+  deliveryAddress?: CustomerAddress;
+  totalPayableNow: number; // advanceAmount + deliveryCharge
+  remainingProductAmount: number; // Total Offer Price - advanceAmount (payable to Shopkeeper later)
   upiId: string;
   upiUri: string;
   retryForBookingId?: string;

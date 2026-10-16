@@ -822,6 +822,23 @@ service cloud.firestore {
       allow delete: if isValidId(deviceId) && isAdmin();
     }
 
+    match /deliveryPartners/{partnerId} {
+      allow get: if isValidId(partnerId);
+      allow list: if true;
+      allow create: if isValidId(partnerId) &&
+        incoming().partnerId == partnerId &&
+        incoming().name is string && incoming().name.size() >= 1 &&
+        incoming().contactNumber is string && incoming().contactNumber.size() >= 10;
+      allow update: if isValidId(partnerId) && (
+        isAdmin() ||
+        (
+          incoming().partnerId == existing().partnerId &&
+          incoming().createdAt == existing().createdAt
+        )
+      );
+      allow delete: if isValidId(partnerId) && isAdmin();
+    }
+
     match /settings/{settingId} {
       allow get: if isValidId(settingId) && existing().MIN_BOOKING_AMOUNT_PER_UNIT >= 1;
       allow list: if existing().MIN_BOOKING_AMOUNT_PER_UNIT >= 1;
